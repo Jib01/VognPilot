@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+pydantic[email]
+pydantic-settings
+sqlalchemy[asyncio]
+asyncpg
+pwdlib[argon2]
+python-jose[cryptography]
+google-genai
+google-auth
+alembic
+python-multipart
