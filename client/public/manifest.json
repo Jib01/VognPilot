@@ -1,0 +1,17 @@
+{
+  "name": "VognPilot",
+  "short_name": "VognPilot",
+  "description": "Smart Grocery Scanner",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

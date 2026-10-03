@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1 import auth, scan
+from app.api.v1 import auth, scan, grocery
 
 app = FastAPI(
     title="VognPilot API",
@@ -18,6 +18,7 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(scan.router, prefix="/api/v1/scan", tags=["scan"])
+app.include_router(grocery.router, prefix="/api/v1/groceries", tags=["groceries"])
 
 @app.get("/")
 

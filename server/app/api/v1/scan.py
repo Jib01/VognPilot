@@ -27,5 +27,7 @@ async def scan_image(
     try:
         analysis = analyze_shelf_image(image_bytes, file.content_type, user_prefs)
         return analysis
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Vision API error: {str(e)}")

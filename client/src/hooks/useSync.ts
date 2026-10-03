@@ -15,17 +15,22 @@ export function useSyncEngine() {
 
         console.log(`[Sync Engine] Found ${pendingItems.length} pending items. Pushing to backend...`);
         
-        // Mock Backend Sync Call
-        // const response = await fetch('http://localhost:8000/api/v1/list/sync', {
-        //   method: 'POST',
-        //   headers: { 'Content-Type': 'application/json' },
-        //   body: JSON.stringify(pendingItems)
-        // });
-        
-        // if (!response.ok) throw new Error("Backend sync failed");
+        // Sanitize legacy items that might be missing 'quantity'
+        const payload = pendingItems.map(item => ({
+           ...item,
+           quantity: item.quantity || 1
+        }));
 
-        // Simulate network delay for the mock
-        await new Promise(resolve => setTimeout(resolve, 800));
+        const response = await fetch('http://localhost:8000/api/v1/groceries/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        
+        if (!response.ok) {
+           const errText = await response.text();
+           throw new Error(`Backend sync failed: ${response.status} ${errText}`);
+        }
 
         // Mark as synced locally
         for (const item of pendingItems) {

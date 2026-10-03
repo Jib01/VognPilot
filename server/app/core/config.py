@@ -20,6 +20,8 @@ class Settings(BaseSettings):
 
     # AI Integration
     GEMINI_API_KEY: str = "placeholder_key"
+    GEMINI_MODEL: str = "gemini-3.8-flash"
+    GEMINI_FALLBACK_MODEL: str = "gemini-3.8-pro"
     
     model_config = {
         "env_file": ".env",
