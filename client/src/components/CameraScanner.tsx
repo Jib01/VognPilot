@@ -8,6 +8,7 @@ import { useSyncEngine } from '../hooks/useSync';
 import GroceryDrawer from './GroceryDrawer';
 
 import { ProductBottomSheet } from './ProductBottomSheet';
+import { API_URL } from '../lib/api';
 
 export default function CameraScanner() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -119,7 +120,7 @@ export default function CameraScanner() {
         currency: { primary: "DKK", favorite: "EUR", fixed_rate: 7.46 }
       }));
 
-      const res = await fetch("http://localhost:8000/api/v1/scan/", {
+      const res = await fetch(`${API_URL}/api/v1/scan/`, {
         method: "POST",
         body: formData
       });

@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { db } from '../lib/db';
+import { API_URL } from '../lib/api';
 
 export function useSyncEngine() {
   useEffect(() => {
@@ -21,7 +22,7 @@ export function useSyncEngine() {
            quantity: item.quantity || 1
         }));
 
-        const response = await fetch('http://localhost:8000/api/v1/groceries/sync', {
+        const response = await fetch(`${API_URL}/api/v1/groceries/sync`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
