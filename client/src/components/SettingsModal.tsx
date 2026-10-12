@@ -2,6 +2,7 @@
 
 import { X, Moon, Sun, Monitor, Languages, ShieldCheck, Coins } from "lucide-react";
 import React from "react";
+import { getTranslation } from "../lib/translations";
 
 export interface UserPreferences {
   theme: "dark" | "light" | "system";
@@ -30,6 +31,8 @@ export default function SettingsModal({
   onUpdatePreferences,
 }: Props) {
   if (!isOpen) return null;
+
+  const t = getTranslation(preferences.language);
 
   const handleThemeChange = (theme: "dark" | "light" | "system") => {
     const updated: UserPreferences = { ...preferences, theme };
@@ -80,13 +83,13 @@ export default function SettingsModal({
   return (
     <div className="fixed inset-0 z-[250] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
       <div 
-        className="w-full max-w-md bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col max-h-[90dvh] overflow-hidden border border-slate-200 dark:border-slate-800"
+        className="w-full max-w-md bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col max-h-[90dvh] overflow-hidden border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100"
       >
         {/* Header */}
         <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/70 dark:bg-slate-900/70">
           <div className="flex items-center gap-2.5">
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
-              Settings
+            <h2 className="text-xl font-bold tracking-tight">
+              {t.settings}
             </h2>
           </div>
           <button
@@ -103,13 +106,13 @@ export default function SettingsModal({
           {/* Theme Option */}
           <div>
             <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5 block">
-              Appearance
+              {t.appearance}
             </label>
             <div className="grid grid-cols-3 gap-2">
               {[
-                { id: "dark", label: "Dark", icon: Moon },
-                { id: "light", label: "Light", icon: Sun },
-                { id: "system", label: "System", icon: Monitor },
+                { id: "dark", label: t.dark, icon: Moon },
+                { id: "light", label: t.light, icon: Sun },
+                { id: "system", label: t.system, icon: Monitor },
               ].map(({ id, label, icon: Icon }) => {
                 const isSelected = preferences.theme === id;
                 return (
@@ -118,7 +121,7 @@ export default function SettingsModal({
                     onClick={() => handleThemeChange(id as "dark" | "light" | "system")}
                     className={`flex flex-col items-center justify-center p-3 rounded-2xl border text-xs font-bold transition-all ${
                       isSelected
-                        ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 shadow-sm"
+                        ? "border-blue-500 bg-blue-50/60 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 shadow-sm"
                         : "border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50"
                     }`}
                   >
@@ -134,13 +137,13 @@ export default function SettingsModal({
           <div>
             <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5 flex items-center justify-between">
               <span className="flex items-center gap-1.5">
-                <Coins className="w-3.5 h-3.5" /> Primary Currency
+                <Coins className="w-3.5 h-3.5" /> {t.primaryCurrency}
               </span>
               <span className="text-[10px] lowercase text-slate-400 font-normal">1 € ≈ 7.46 DKK</span>
             </label>
             <div className="grid grid-cols-2 gap-2">
               {[
-                { id: "DKK", label: "DKK (kr)", sub: "Danish Krone" },
+                { id: "DKK", label: "DKK (kr)", sub: "Dansk krone" },
                 { id: "EUR", label: "EUR (€)", sub: "Euro" },
               ].map(({ id, label, sub }) => {
                 const isSelected = preferences.currency === id;
@@ -150,7 +153,7 @@ export default function SettingsModal({
                     onClick={() => handleCurrencyChange(id as "DKK" | "EUR")}
                     className={`flex flex-col items-start p-3 rounded-2xl border text-left transition-all ${
                       isSelected
-                        ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 shadow-sm"
+                        ? "border-blue-500 bg-blue-50/60 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 shadow-sm"
                         : "border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50"
                     }`}
                   >
@@ -165,7 +168,7 @@ export default function SettingsModal({
           {/* Language Option */}
           <div>
             <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5 flex items-center gap-1.5">
-              <Languages className="w-3.5 h-3.5" /> Language
+              <Languages className="w-3.5 h-3.5" /> {t.language}
             </label>
             <div className="grid grid-cols-2 gap-2">
               {[
@@ -179,7 +182,7 @@ export default function SettingsModal({
                     onClick={() => handleLanguageChange(id as "en" | "it")}
                     className={`flex flex-col items-start p-3 rounded-2xl border text-left transition-all ${
                       isSelected
-                        ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 shadow-sm"
+                        ? "border-blue-500 bg-blue-50/60 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 shadow-sm"
                         : "border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50"
                     }`}
                   >
@@ -194,15 +197,15 @@ export default function SettingsModal({
           {/* Dietary Constraints & Allergens */}
           <div>
             <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5 flex items-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5" /> Dietary Constraints & Allergens
+              <ShieldCheck className="w-3.5 h-3.5" /> {t.dietaryConstraints}
             </label>
             <div className="space-y-2">
               {[
-                { key: "vegetarian", label: "Vegetarian", danish: "Vegetarisk", icon: "🥗" },
-                { key: "vegan", label: "Vegan", danish: "Vegansk / Plantebaseret", icon: "🌱" },
-                { key: "organic", label: "Organic", danish: "Økologisk (Ø-mærke)", icon: "🌿" },
-                { key: "lactoseFree", label: "Lactose-Free", danish: "Laktosefri", icon: "🥛" },
-                { key: "glutenFree", label: "Gluten-Free", danish: "Glutenfri", icon: "🌾" },
+                { key: "vegetarian", label: t.vegetarian, danish: "Vegetarisk", icon: "🥗" },
+                { key: "vegan", label: t.vegan, danish: "Vegansk / Plantebaseret", icon: "🌱" },
+                { key: "organic", label: t.organic, danish: "Økologisk (Ø-mærke)", icon: "🌿" },
+                { key: "lactoseFree", label: t.lactoseFree, danish: "Laktosefri", icon: "🥛" },
+                { key: "glutenFree", label: t.glutenFree, danish: "Glutenfri", icon: "🌾" },
               ].map(({ key, label, danish, icon }) => {
                 const checked = preferences.dietary[key as keyof UserPreferences["dietary"]];
                 return (
@@ -233,9 +236,6 @@ export default function SettingsModal({
                 );
               })}
             </div>
-            <p className="text-[11px] text-slate-400 mt-2 italic">
-              Active preferences are automatically checked by Gemini when scanning supermarket shelves.
-            </p>
           </div>
         </div>
 
@@ -243,9 +243,9 @@ export default function SettingsModal({
         <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/90 flex justify-end">
           <button
             onClick={onClose}
-            className="w-full bg-slate-900 dark:bg-blue-600 hover:bg-slate-800 dark:hover:bg-blue-500 text-white font-bold py-3 rounded-xl transition-all active:scale-95 text-sm"
+            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 rounded-xl transition-all active:scale-95 text-sm shadow-md"
           >
-            Done
+            {t.done}
           </button>
         </div>
       </div>
