@@ -60,3 +60,9 @@ pgdata/
 Thumbs.db
 .vscode/
 .idea/
+
+# Cache
+server/cache/
+cache/
+.cache/
+

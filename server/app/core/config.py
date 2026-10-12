@@ -5,6 +5,9 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "VognPilot API"
     API_V1_STR: str = "/api/v1"
     
+    # Testing & Resilience
+    MOCK_VISION: bool = False
+    
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/vognpilot"
     

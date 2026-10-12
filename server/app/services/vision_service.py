@@ -1,14 +1,102 @@
 from google import genai
 from google.genai import types
 from app.core.config import settings
-from app.schemas.vision import RawShelfAnalysis
+from app.schemas.vision import RawShelfAnalysis, ProductBoundingBox
 import json
 import time
+import hashlib
+from pathlib import Path
+
+# Directory for caching vision results by SHA256 image hash
+CACHE_DIR = Path(__file__).resolve().parent.parent.parent / "cache"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+def get_mock_shelf_analysis() -> RawShelfAnalysis:
+    """
+    Returns a realistic mock shelf analysis with 2-3 products for UI testing without consuming Gemini API quota.
+    """
+    return RawShelfAnalysis(
+        detected_products=[
+            ProductBoundingBox(
+                box_2d=[200, 150, 650, 420],
+                label="Arla Øko Letmælk 1L",
+                danish_term="Letmælk 1,5%",
+                unit_price_dkk=13.95,
+                unit="L",
+                package_price_dkk=13.95,
+                pant_fee_dkk=None,
+                multipack_offer=None,
+                fat_percentage=1.5,
+                sugar_g_per_100g=4.7,
+                protein_g_per_100g=3.5,
+                is_organic=True,
+                is_lactose_free=False,
+                is_plant_based=False,
+                matches_constraints=True,
+            ),
+            ProductBoundingBox(
+                box_2d=[210, 450, 660, 710],
+                label="Naturli' Organic Oat Drink 1L",
+                danish_term="Havredrik Økologisk",
+                unit_price_dkk=18.50,
+                unit="L",
+                package_price_dkk=18.50,
+                pant_fee_dkk=None,
+                multipack_offer="Ta' 2 for 30 kr",
+                fat_percentage=1.2,
+                sugar_g_per_100g=3.8,
+                protein_g_per_100g=1.0,
+                is_organic=True,
+                is_lactose_free=True,
+                is_plant_based=True,
+                matches_constraints=True,
+            ),
+            ProductBoundingBox(
+                box_2d=[220, 730, 670, 940],
+                label="Carlsberg Pilsner 33cl",
+                danish_term="Pilsner Øl",
+                unit_price_dkk=24.24,
+                unit="L",
+                package_price_dkk=8.00,
+                pant_fee_dkk=1.0,
+                multipack_offer=None,
+                fat_percentage=None,
+                sugar_g_per_100g=0.1,
+                protein_g_per_100g=0.3,
+                is_organic=False,
+                is_lactose_free=True,
+                is_plant_based=True,
+                matches_constraints=False,
+            ),
+        ],
+        recommended_product_index=1,
+        confidence_score=0.95,
+        is_blurry_or_obscured=False,
+        decision_reason="Naturli Organic Oat Drink is plant-based, organic, has a multi-pack discount, and meets user preferences.",
+    )
 
 def analyze_shelf_image(image_bytes: bytes, mime_type: str, user_preferences: dict) -> RawShelfAnalysis:
     """
     Analyzes an image of a grocery shelf to extract products, prices, and match user dietary preferences.
+    Uses SHA256 image caching and optional mock mode to prevent API quota exhaustion during development and testing.
     """
+    # 1. Mock Mode (bypass network & quota)
+    if getattr(settings, "MOCK_VISION", False):
+        time.sleep(0.45)  # Simulated latency (400-500ms)
+        return get_mock_shelf_analysis()
+
+    # 2. Check SHA256 Cache
+    image_hash = hashlib.sha256(image_bytes).hexdigest()
+    cache_file = CACHE_DIR / f"{image_hash}.json"
+    if cache_file.exists():
+        try:
+            with open(cache_file, "r", encoding="utf-8") as f:
+                cached_json = f.read()
+            print(f"Returning cached vision analysis for hash {image_hash[:10]}...")
+            return RawShelfAnalysis.model_validate_json(cached_json)
+        except Exception as cache_err:
+            print(f"Warning: Failed to load cache for {image_hash[:10]}: {cache_err}. Proceeding with API call.")
+
     if not settings.GEMINI_API_KEY or settings.GEMINI_API_KEY == "placeholder_key" or settings.GEMINI_API_KEY == "":
         raise ValueError("GEMINI_API_KEY non configurata o non valida. Aggiungi la tua API Key nel file .env.")
 
@@ -30,6 +118,7 @@ def analyze_shelf_image(image_bytes: bytes, mime_type: str, user_preferences: di
     If the image is too blurry to confidently read prices or ingredients, set is_blurry_or_obscured to true.
     """
     
+    # Supported fallback models (gemini-1.5-flash and gemini-1.5-pro removed due to 404 NOT_FOUND)
     models_to_try = [
         'gemini-3.8-flash',
         'gemini-3.8-pro',
@@ -97,10 +186,20 @@ def analyze_shelf_image(image_bytes: bytes, mime_type: str, user_preferences: di
                 )
                 
                 if hasattr(response, 'parsed') and response.parsed:
-                    return process_and_deduplicate(response.parsed)
-                    
-                parsed_obj = RawShelfAnalysis.model_validate_json(response.text)
-                return process_and_deduplicate(parsed_obj)
+                    final_analysis = process_and_deduplicate(response.parsed)
+                else:
+                    parsed_obj = RawShelfAnalysis.model_validate_json(response.text)
+                    final_analysis = process_and_deduplicate(parsed_obj)
+
+                # Persist to SHA256 cache
+                try:
+                    with open(cache_file, "w", encoding="utf-8") as f:
+                        f.write(final_analysis.model_dump_json(indent=2))
+                    print(f"Cached vision analysis for hash {image_hash[:10]}.")
+                except Exception as cache_err:
+                    print(f"Warning: Failed to write cache for {image_hash[:10]}: {cache_err}")
+
+                return final_analysis
                 
             except Exception as e:
                 error_msg = str(e).lower()

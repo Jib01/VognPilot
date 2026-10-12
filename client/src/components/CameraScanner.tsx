@@ -20,7 +20,6 @@ export default function CameraScanner() {
   // Interactions
   const [selectedBox, setSelectedBox] = useState<number | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [snap, setSnap] = useState<number | string | null>(0.25);
 
   // Initialize offline sync engine
   useSyncEngine();
@@ -132,9 +131,9 @@ export default function CameraScanner() {
       
       const data: RawShelfAnalysis = await res.json();
       setAnalysis(data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      setError(err.message || "Network error. Make sure FastAPI is running.");
+      setError(err instanceof Error ? err.message : "Network error. Make sure FastAPI is running.");
     } finally {
       setLoading(false);
     }
