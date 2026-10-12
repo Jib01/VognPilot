@@ -10,6 +10,9 @@ interface Props {
   onAddToList: (prod: ProductBoundingBox) => void;
   onNewScan: () => void;
   convertDKKtoEUR: (dkk: number) => string;
+  sheetSnap?: 'peek' | 'half' | 'full';
+  onDragStart?: (e: React.PointerEvent) => void;
+  onToggleSnap?: () => void;
 }
 
 export function ProductBottomSheet({
@@ -19,22 +22,53 @@ export function ProductBottomSheet({
   onAddToList,
   onNewScan,
   convertDKKtoEUR,
+  sheetSnap = 'half',
+  onDragStart,
+  onToggleSnap,
 }: Props) {
   const selectedProduct = selectedBox !== null ? analysis.detected_products[selectedBox] : null;
+  const winnerProduct = analysis.recommended_product_index !== null && analysis.recommended_product_index !== undefined
+    ? analysis.detected_products[analysis.recommended_product_index]
+    : null;
 
   return (
     <div className="flex flex-col h-full w-full bg-slate-50 rounded-t-[2.5rem] shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.3)] overflow-hidden">
-      <div className="p-4 bg-white rounded-t-[2.5rem] flex-1 flex flex-col h-full shadow-sm overflow-hidden">
-        <div className="mx-auto w-12 h-1.5 flex-shrink-0 rounded-full bg-slate-200 mb-4" />
+      <div className="p-4 pt-2 bg-white rounded-t-[2.5rem] flex-1 flex flex-col h-full shadow-sm overflow-hidden">
+        {/* Interactive Drag Handle */}
+        <div 
+          onPointerDown={onDragStart}
+          onClick={onToggleSnap}
+          className="mx-auto w-full pt-1 pb-2 flex flex-col items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none group"
+        >
+          <div className="w-12 h-1.5 rounded-full bg-slate-300 group-hover:bg-slate-400 transition-colors" />
+          <div className="flex items-center gap-1 text-[9px] text-slate-400 font-bold uppercase tracking-wider mt-1">
+            {sheetSnap === 'peek' && <span>Trascina su ↑</span>}
+            {sheetSnap === 'half' && <span>Trascina ↕</span>}
+            {sheetSnap === 'full' && <span>Trascina giù ↓</span>}
+          </div>
+        </div>
         
         {!selectedProduct ? (
           // Default View: Vertical Scrollable List
           <div className="flex flex-col h-full overflow-hidden">
-            <div className="flex justify-between items-center px-2 mb-4 shrink-0">
-              <h3 className="font-bold text-slate-800 text-lg tracking-tight">Prodotti Trovati</h3>
-              <span className="text-xs font-bold bg-blue-100 text-blue-700 px-3 py-1 rounded-full">
-                {analysis.detected_products.length}
-              </span>
+            <div 
+              onPointerDown={onDragStart}
+              onClick={sheetSnap === 'peek' ? onToggleSnap : undefined}
+              className={`flex justify-between items-center px-2 mb-3 shrink-0 ${sheetSnap === 'peek' ? 'cursor-pointer' : ''}`}
+            >
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-slate-800 text-lg tracking-tight">Prodotti Trovati</h3>
+                <span className="text-xs font-bold bg-blue-100 text-blue-700 px-2.5 py-0.5 rounded-full">
+                  {analysis.detected_products.length}
+                </span>
+              </div>
+              {sheetSnap === 'peek' && winnerProduct && (
+                <div className="text-right truncate max-w-[170px]">
+                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md truncate inline-block">
+                    ★ {winnerProduct.label}
+                  </span>
+                </div>
+              )}
             </div>
             
             <div className="flex-1 overflow-y-auto px-2 pb-4 space-y-3 hide-scrollbar">

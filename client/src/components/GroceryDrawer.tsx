@@ -3,7 +3,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../lib/db';
 import { X, CheckCircle2, Circle, ShoppingCart, Trash2, Plus, Minus, Target } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface Props {
   isOpen: boolean;
@@ -14,6 +14,44 @@ export default function GroceryDrawer({ isOpen, onClose }: Props) {
   const items = useLiveQuery(() => db.groceryList.orderBy('id').reverse().toArray()) || [];
   const [budgetTarget, setBudgetTarget] = useState<number>(200);
   const [isEditingBudget, setIsEditingBudget] = useState(false);
+
+  // Swipe down to dismiss
+  const [dragOffsetY, setDragOffsetY] = useState<number>(0);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const startY = useRef<number>(0);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    startY.current = e.clientY;
+    setIsDragging(true);
+  };
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const onPointerMove = (e: PointerEvent) => {
+      const deltaY = e.clientY - startY.current;
+      if (deltaY > 0) {
+        setDragOffsetY(deltaY);
+      }
+    };
+
+    const onPointerUp = () => {
+      setIsDragging(false);
+      setDragOffsetY((current) => {
+        if (current > 100) {
+          onClose();
+        }
+        return 0;
+      });
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+  }, [isDragging, onClose]);
 
   useEffect(() => {
     const saved = localStorage.getItem('vognpilot_budget');
@@ -55,9 +93,26 @@ export default function GroceryDrawer({ isOpen, onClose }: Props) {
     <div className="absolute inset-0 z-[200] flex flex-col justify-end pointer-events-auto">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       
-      <div className="relative w-full max-w-md mx-auto bg-slate-50 h-[80dvh] rounded-t-3xl flex flex-col shadow-2xl animate-in slide-in-from-bottom-full duration-300">
+      <div 
+        className="relative w-full max-w-md mx-auto bg-slate-50 h-[80dvh] rounded-t-3xl flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom-full duration-300"
+        style={{
+          transform: `translateY(${dragOffsetY}px)`,
+          transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1)'
+        }}
+      >
+        {/* Interactive Drag Handle */}
+        <div 
+          onPointerDown={handlePointerDown}
+          className="mx-auto w-full pt-2.5 pb-1 flex flex-col items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none bg-white rounded-t-3xl"
+        >
+          <div className="w-12 h-1.5 rounded-full bg-slate-300 hover:bg-slate-400 transition-colors" />
+          <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mt-1">Trascina giù per chiudere ↓</span>
+        </div>
         
-        <div className="p-5 border-b flex justify-between items-center bg-white rounded-t-3xl shadow-sm z-10">
+        <div 
+          onPointerDown={handlePointerDown}
+          className="p-5 pt-3 border-b flex justify-between items-center bg-white shadow-sm z-10 cursor-grab active:cursor-grabbing touch-none select-none"
+        >
           <div className="flex items-center gap-3">
             <div className="bg-blue-100 p-2 rounded-full">
               <ShoppingCart className="w-5 h-5 text-blue-600" />

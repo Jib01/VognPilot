@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from 'react';
-import { Upload, Loader2, AlertTriangle, CheckCircle2, ShoppingCart } from 'lucide-react';
+import { Upload, AlertTriangle, CheckCircle2, ShoppingCart } from 'lucide-react';
 import { RawShelfAnalysis, ProductBoundingBox } from '../types/vision';
 import { db } from '../lib/db';
 import { useSyncEngine } from '../hooks/useSync';
@@ -10,20 +10,96 @@ import GroceryDrawer from './GroceryDrawer';
 import { ProductBottomSheet } from './ProductBottomSheet';
 import { API_URL } from '../lib/api';
 
+const SCAN_STEPS = [
+  "Inquadratura scaffale in corso...",
+  "Rilevamento prodotti e prezzi DKK...",
+  "Verifica preferenze dietetiche...",
+  "Generazione dettagli..."
+];
+
 export default function CameraScanner() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<RawShelfAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   
   // Interactions
   const [selectedBox, setSelectedBox] = useState<number | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
+  // Draggable bottom sheet height (percentage of viewport: 18% = peek, 50% = half, 86% = full)
+  const [sheetHeight, setSheetHeight] = useState<number>(50);
+  const [isDraggingSheet, setIsDraggingSheet] = useState<boolean>(false);
+  const dragStartY = useRef<number>(0);
+  const dragStartHeight = useRef<number>(50);
+
+  const startDrag = (clientY: number) => {
+    dragStartY.current = clientY;
+    dragStartHeight.current = sheetHeight;
+    setIsDraggingSheet(true);
+  };
+
+  useEffect(() => {
+    if (!isDraggingSheet) return;
+
+    const onPointerMove = (e: PointerEvent) => {
+      const deltaY = e.clientY - dragStartY.current;
+      const vh = window.innerHeight;
+      const deltaPercent = (deltaY / vh) * 100;
+      // Pulling down (positive delta) decreases height, pulling up increases height
+      const nextHeight = Math.min(86, Math.max(18, dragStartHeight.current - deltaPercent));
+      setSheetHeight(nextHeight);
+    };
+
+    const onPointerUp = () => {
+      setIsDraggingSheet(false);
+      setSheetHeight((current) => {
+        if (current < 32) return 18;
+        if (current > 68) return 86;
+        return 50;
+      });
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+  }, [isDraggingSheet]);
+
+  const toggleSheetSnap = () => {
+    setSheetHeight((prev) => {
+      if (prev < 32) return 50;
+      if (prev < 68) return 86;
+      return 50;
+    });
+  };
+
+  const handleSelectBox = (idx: number | null) => {
+    setSelectedBox(idx);
+    if (idx !== null && sheetHeight < 35) {
+      setSheetHeight(50);
+    }
+  };
+
   // Initialize offline sync engine
   useSyncEngine();
+
+  // Rotate loading step messages every 2.2s during analysis
+  useEffect(() => {
+    if (!loading) {
+      setLoadingStep(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setLoadingStep((prev) => (prev + 1) % SCAN_STEPS.length);
+    }, 2200);
+    return () => clearInterval(interval);
+  }, [loading]);
 
   const startCamera = async () => {
     try {
@@ -62,7 +138,7 @@ export default function CameraScanner() {
       setImageUri(URL.createObjectURL(blob));
       if (stream) stream.getTracks().forEach(track => track.stop());
       await uploadToApi(blob);
-    }, 'image/jpeg', 0.8);
+    }, 'image/jpeg', 0.95);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -77,31 +153,46 @@ export default function CameraScanner() {
   const compressAndResizeImage = (fileOrBlob: Blob): Promise<Blob> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
+      const objectUrl = URL.createObjectURL(fileOrBlob);
+
       img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
         const canvas = document.createElement('canvas');
         let { width, height } = img;
         const maxDim = 1600;
         
         if (width > height && width > maxDim) {
-          height *= maxDim / width;
+          height = (height * maxDim) / width;
           width = maxDim;
         } else if (height > maxDim) {
-          width *= maxDim / height;
+          width = (width * maxDim) / height;
           height = maxDim;
         }
         
-        canvas.width = width;
-        canvas.height = height;
+        canvas.width = Math.round(width);
+        canvas.height = Math.round(height);
         const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
+        if (!ctx) {
+          resolve(fileOrBlob);
+          return;
+        }
+
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, Math.round(width), Math.round(height));
         
         canvas.toBlob((blob) => {
           if (blob) resolve(blob);
-          else reject(new Error('Canvas toBlob failed'));
-        }, 'image/jpeg', 0.8);
+          else resolve(fileOrBlob);
+        }, 'image/jpeg', 0.88);
       };
-      img.onerror = reject;
-      img.src = URL.createObjectURL(fileOrBlob);
+
+      img.onerror = (err) => {
+        URL.revokeObjectURL(objectUrl);
+        reject(err);
+      };
+
+      img.src = objectUrl;
     });
   };
 
@@ -145,6 +236,7 @@ export default function CameraScanner() {
     setAnalysis(null);
     setSelectedBox(null);
     setError(null);
+    setSheetHeight(50);
     startCamera();
   };
 
@@ -203,69 +295,169 @@ export default function CameraScanner() {
       {!imageUri ? (
         <div className="relative flex-1 w-full bg-slate-900 overflow-hidden rounded-b-3xl">
           <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover" />
-          
-          {loading && (
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center text-white z-[100]">
-              <Loader2 className="w-12 h-12 animate-spin mb-4 text-green-400" />
-              <p className="font-medium animate-pulse">Analyzing shelves with Gemini...</p>
-            </div>
-          )}
         </div>
       ) : (
-        <div className="relative w-full bg-black flex-shrink-0 flex flex-col items-center justify-start max-h-[55dvh] z-20 shadow-xl border-b border-slate-800">
-          <div className="relative inline-flex max-w-full max-h-[55dvh]">
-            <img src={imageUri} alt="Scanned Shelf" className="max-w-full max-h-[55dvh] w-auto h-auto object-contain block" />
+        <div 
+          className="relative w-full bg-black flex-shrink-0 flex flex-col items-center justify-center overflow-hidden z-20 shadow-xl border-b border-slate-800"
+          style={{
+            height: `${100 - sheetHeight}%`,
+            transition: isDraggingSheet ? 'none' : 'height 0.35s cubic-bezier(0.2, 0.9, 0.3, 1)'
+          }}
+        >
+          <div className="relative inline-flex max-w-full max-h-full items-center justify-center">
+            <img 
+              src={imageUri} 
+              alt="Scanned Shelf" 
+              className={`max-w-full max-h-full w-auto h-auto object-contain block transition-opacity duration-300 ${loading ? 'opacity-75' : 'opacity-100'}`} 
+            />
             
-            <div className="absolute inset-0 pointer-events-none">
-              {/* Bounding Boxes */}
-              {analysis && analysis.detected_products.map((prod, idx) => {
-                const [ymin, xmin, ymax, xmax] = prod.box_2d;
-                const top = (ymin / 1000) * 100;
-                const left = (xmin / 1000) * 100;
-                const height = ((ymax - ymin) / 1000) * 100;
-                const width = ((xmax - xmin) / 1000) * 100;
-                
-                const isWinner = idx === analysis.recommended_product_index;
-                const isSelected = selectedBox === idx;
-                const borderColor = isSelected ? "border-blue-500 shadow-[0_0_0_4px_rgba(59,130,246,0.3)]" : (isWinner ? "border-green-500 shadow-lg" : "border-white/60");
-                const zIndex = isSelected ? 60 : 50;
+            {/* Dark overlay & blur during scanning */}
+            {loading && (
+              <div className="absolute inset-0 bg-black/40 backdrop-blur-[0.5px]" />
+            )}
 
-                return (
+            {/* Cyber Laser Scanner and HUD during loading */}
+            {loading && (
+              <>
+                <div className="absolute inset-0 pointer-events-none overflow-hidden">
                   <div 
-                    key={idx}
-                    onClick={() => setSelectedBox(isSelected ? null : idx)}
-                    className={`absolute border-[3px] rounded-lg cursor-pointer transition-all pointer-events-auto ${borderColor}`}
-                    style={{ top: `${top}%`, left: `${left}%`, width: `${width}%`, height: `${height}%`, zIndex }}
+                    className="absolute left-0 right-0 h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-scan-laser z-30"
+                    style={{
+                      boxShadow: "0 0 16px 3px rgba(6, 182, 212, 0.95), 0 0 32px 6px rgba(16, 185, 129, 0.65)"
+                    }}
                   >
-                    {isWinner && (
-                      <div className="absolute -top-3 -left-3 bg-green-500 text-white rounded-full p-1 shadow-md">
-                        <CheckCircle2 className="w-4 h-4" />
-                      </div>
-                    )}
+                    <div className="absolute inset-x-0 -top-7 h-7 bg-gradient-to-b from-transparent via-cyan-400/15 to-cyan-400/30" />
+                    <div className="absolute inset-x-0 top-1 h-7 bg-gradient-to-b from-cyan-400/30 via-cyan-400/15 to-transparent" />
                   </div>
-                );
-              })}
-            </div>
+                </div>
+
+                {/* Viewfinder Corners */}
+                <div className="absolute top-2.5 left-2.5 w-5 h-5 border-t-2 border-l-2 border-cyan-400 rounded-tl pointer-events-none z-30 shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
+                <div className="absolute top-2.5 right-2.5 w-5 h-5 border-t-2 border-r-2 border-cyan-400 rounded-tr pointer-events-none z-30 shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
+                <div className="absolute bottom-2.5 left-2.5 w-5 h-5 border-b-2 border-l-2 border-cyan-400 rounded-bl pointer-events-none z-30 shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
+                <div className="absolute bottom-2.5 right-2.5 w-5 h-5 border-b-2 border-r-2 border-cyan-400 rounded-br pointer-events-none z-30 shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
+
+                {/* Floating Rotating Message Badge */}
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-40 px-4 py-1.5 bg-slate-950/85 backdrop-blur-md rounded-full border border-cyan-500/50 shadow-2xl flex items-center gap-2 max-w-[90%] pointer-events-none">
+                  <span className="relative flex h-2 w-2 shrink-0">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+                  </span>
+                  <p className="text-xs font-medium text-cyan-50 tracking-wide truncate">
+                    {SCAN_STEPS[loadingStep]}
+                  </p>
+                </div>
+              </>
+            )}
+
+            {/* Bounding Boxes */}
+            {!loading && analysis && (
+              <div className="absolute inset-0 pointer-events-none">
+                {analysis.detected_products.map((prod, idx) => {
+                  const [ymin, xmin, ymax, xmax] = prod.box_2d;
+                  const top = (ymin / 1000) * 100;
+                  const left = (xmin / 1000) * 100;
+                  const height = ((ymax - ymin) / 1000) * 100;
+                  const width = ((xmax - xmin) / 1000) * 100;
+                  
+                  const isWinner = idx === analysis.recommended_product_index;
+                  const isSelected = selectedBox === idx;
+                  const borderColor = isSelected ? "border-blue-500 shadow-[0_0_0_4px_rgba(59,130,246,0.3)]" : (isWinner ? "border-green-500 shadow-lg" : "border-white/60");
+                  const zIndex = isSelected ? 60 : 50;
+
+                  return (
+                    <div 
+                      key={idx}
+                      onClick={() => handleSelectBox(isSelected ? null : idx)}
+                      className={`absolute border-[3px] rounded-lg cursor-pointer transition-all pointer-events-auto ${borderColor}`}
+                      style={{ top: `${top}%`, left: `${left}%`, width: `${width}%`, height: `${height}%`, zIndex }}
+                    >
+                      {isWinner && (
+                        <div className="absolute -top-3 -left-3 bg-green-500 text-white rounded-full p-1 shadow-md">
+                          <CheckCircle2 className="w-4 h-4" />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-          
-          {loading && (
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center text-white z-[100]">
-              <Loader2 className="w-12 h-12 animate-spin mb-4 text-green-400" />
-              <p className="font-medium animate-pulse">Analyzing shelves with Gemini...</p>
-            </div>
-          )}
         </div>
       )}
+
+      {/* Loading Skeleton Bottom Sheet */}
+      {imageUri && loading && (
+        <div 
+          className="w-full bg-slate-50 flex flex-col overflow-hidden relative z-30 rounded-t-[2.5rem] shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.3)]"
+          style={{
+            height: `${sheetHeight}%`,
+            transition: isDraggingSheet ? 'none' : 'height 0.35s cubic-bezier(0.2, 0.9, 0.3, 1)'
+          }}
+        >
+          <div className="p-4 pt-2 bg-white rounded-t-[2.5rem] flex-1 flex flex-col h-full shadow-sm overflow-hidden">
+            <div 
+              onPointerDown={(e) => startDrag(e.clientY)}
+              onClick={toggleSheetSnap}
+              className="mx-auto w-full pt-1 pb-2 flex flex-col items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none -mt-1 group"
+            >
+              <div className="w-12 h-1.5 rounded-full bg-slate-300 group-hover:bg-slate-400 transition-colors" />
+              <div className="flex items-center gap-1 text-[9px] text-slate-400 font-bold uppercase tracking-wider mt-1">
+                {sheetHeight <= 25 ? <span>Trascina su ↑</span> : sheetHeight >= 70 ? <span>Trascina giù ↓</span> : <span>Trascina ↕</span>}
+              </div>
+            </div>
+            
+            <div className="flex justify-between items-center px-2 mb-3 shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-slate-800 text-lg tracking-tight">Rilevamento prodotti</span>
+                <span className="inline-block w-2 h-2 rounded-full bg-cyan-500 animate-ping" />
+              </div>
+              <span className="text-[11px] font-bold bg-cyan-100 text-cyan-800 px-3 py-1 rounded-full animate-pulse">
+                Analisi AI...
+              </span>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto px-2 pb-4 space-y-3 hide-scrollbar">
+              {[1, 2, 3].map((idx) => (
+                <div 
+                  key={idx}
+                  className="flex items-center justify-between p-4 bg-white rounded-2xl border border-slate-100 shadow-sm animate-pulse"
+                >
+                  <div className="flex-1 min-w-0 pr-4 space-y-2">
+                    <div className="h-4 bg-slate-200 rounded w-3/4" />
+                    <div className="h-3 bg-slate-100 rounded w-1/2" />
+                    <div className="flex items-baseline gap-2 pt-1">
+                      <div className="h-5 bg-slate-200 rounded w-16" />
+                      <div className="h-4 bg-blue-100 rounded w-10" />
+                    </div>
+                  </div>
+                  <div className="w-11 h-11 bg-slate-100 rounded-xl shrink-0" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Product List / Details Panel */}
-      {imageUri && analysis && (
-        <div className="flex-1 w-full bg-slate-50 flex flex-col overflow-hidden relative z-30">
+      {imageUri && analysis && !loading && (
+        <div 
+          className="w-full bg-slate-50 flex flex-col overflow-hidden relative z-30 rounded-t-[2.5rem] shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.3)]"
+          style={{
+            height: `${sheetHeight}%`,
+            transition: isDraggingSheet ? 'none' : 'height 0.35s cubic-bezier(0.2, 0.9, 0.3, 1)'
+          }}
+        >
           <ProductBottomSheet 
             analysis={analysis}
             selectedBox={selectedBox}
-            onSelectProduct={setSelectedBox}
+            onSelectProduct={handleSelectBox}
             onAddToList={handleAddToList}
             onNewScan={reset}
             convertDKKtoEUR={convertDKKtoEUR}
+            sheetSnap={sheetHeight <= 25 ? 'peek' : sheetHeight >= 70 ? 'full' : 'half'}
+            onDragStart={(e) => startDrag(e.clientY)}
+            onToggleSnap={toggleSheetSnap}
           />
         </div>
       )}
