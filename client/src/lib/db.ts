@@ -7,6 +7,7 @@ export interface GroceryItem {
   danish_term: string;
   price_dkk: number;
   price_eur: number;
+  pant_fee_dkk?: number;
   quantity: number;
   is_checked: boolean;
   sync_status: 'synced' | 'pending';

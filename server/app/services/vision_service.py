@@ -169,6 +169,7 @@ def analyze_shelf_image(image_bytes: bytes, mime_type: str, user_preferences: di
         return analysis_obj
 
     last_error_was_429 = False
+    last_error_was_503 = False
     for model_name in models_to_try:
         for attempt in range(max_retries):
             try:
@@ -195,25 +196,29 @@ def analyze_shelf_image(image_bytes: bytes, mime_type: str, user_preferences: di
                 try:
                     with open(cache_file, "w", encoding="utf-8") as f:
                         f.write(final_analysis.model_dump_json(indent=2))
-                    print(f"Cached vision analysis for hash {image_hash[:10]}.")
+                    print(f"[Vision Service] Cached vision analysis for hash {image_hash[:10]}.")
                 except Exception as cache_err:
-                    print(f"Warning: Failed to write cache for {image_hash[:10]}: {cache_err}")
+                    print(f"[Vision Service] Warning: Failed to write cache for {image_hash[:10]}: {cache_err}")
 
                 return final_analysis
                 
             except Exception as e:
                 error_msg = str(e).lower()
+                print(f"[Vision Service] Model {model_name} (attempt {attempt + 1}/{max_retries}) error: {e}")
                 if "429" in error_msg or "resource_exhausted" in error_msg or "quota" in error_msg:
-                    print(f"Model {model_name} quota exceeded (429). Falling back...")
+                    print(f"[Vision Service] Model {model_name} quota exceeded (429). Falling back to next model...")
                     last_error_was_429 = True
                     break
                 elif "404" in error_msg or "not_found" in error_msg:
-                    print(f"Model {model_name} not found (404). Falling back...")
+                    print(f"[Vision Service] Model {model_name} not found (404). Falling back...")
                     last_error_was_429 = False
                     break
                 elif "503" in error_msg or "unavailable" in error_msg:
+                    last_error_was_503 = True
                     if attempt < max_retries - 1:
-                        time.sleep(1.0 * (2 ** attempt))
+                        backoff = 1.0 * (2 ** attempt)
+                        print(f"[Vision Service] 503 Unavailable. Retrying in {backoff:.1f}s...")
+                        time.sleep(backoff)
                         continue
                     else:
                         last_error_was_429 = False
@@ -221,7 +226,15 @@ def analyze_shelf_image(image_bytes: bytes, mime_type: str, user_preferences: di
                 else:
                     raise e
                     
+    # If all remote models failed but mock vision is enabled, fallback to mock analysis
+    if getattr(settings, "MOCK_VISION", False):
+        print("[Vision Service] Remote calls failed but MOCK_VISION is enabled. Returning mock fixture.")
+        return get_mock_shelf_analysis()
+
     if last_error_was_429:
-        raise RuntimeError("Quota API temporaneamente esaurita per il test. Riprova tra 60 secondi o verifica la chiave su Google AI Studio.")
+        raise RuntimeError("AI service quota reached. Please retry in 60 seconds or verify your API key.")
         
-    raise RuntimeError("I server di analisi sono momentaneamente occupati o non disponibili. Riprova più tardi.")
+    if last_error_was_503:
+        raise RuntimeError("Analysis servers are temporarily busy or unavailable. Please try again in a moment.")
+
+    raise RuntimeError("Analysis servers are temporarily unavailable. Please try again shortly.")
