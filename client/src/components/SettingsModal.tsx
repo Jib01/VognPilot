@@ -81,20 +81,20 @@ export default function SettingsModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[250] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[250] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
       <div 
-        className="w-full max-w-md bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col max-h-[90dvh] overflow-hidden border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100"
+        className="w-full max-w-md bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col max-h-[90dvh] overflow-hidden border border-zinc-800 text-zinc-100"
       >
         {/* Header */}
-        <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/70 dark:bg-slate-900/70">
+        <div className="p-5 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/90">
           <div className="flex items-center gap-2.5">
-            <h2 className="text-xl font-bold tracking-tight">
+            <h2 className="text-xl font-bold tracking-tight text-zinc-100">
               {t.settings}
             </h2>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-full text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white bg-slate-200/60 dark:bg-slate-800 active:scale-95 transition-all"
+            className="p-2 rounded-full text-zinc-400 hover:text-white bg-zinc-800 active:scale-95 transition-all"
             aria-label="Close settings"
           >
             <X className="w-5 h-5" />
@@ -105,7 +105,7 @@ export default function SettingsModal({
         <div className="flex-1 overflow-y-auto p-5 space-y-6 hide-scrollbar">
           {/* Theme Option */}
           <div>
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5 block">
+            <label className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2.5 block">
               {t.appearance}
             </label>
             <div className="grid grid-cols-3 gap-2">
@@ -121,8 +121,8 @@ export default function SettingsModal({
                     onClick={() => handleThemeChange(id as "dark" | "light" | "system")}
                     className={`flex flex-col items-center justify-center p-3 rounded-2xl border text-xs font-bold transition-all ${
                       isSelected
-                        ? "border-blue-500 bg-blue-50/60 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 shadow-sm"
-                        : "border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                        ? "border-emerald-500 bg-emerald-950/50 text-emerald-300 shadow-sm"
+                        : "border-zinc-800 text-zinc-400 hover:bg-zinc-800/50"
                     }`}
                   >
                     <Icon className="w-5 h-5 mb-1.5" />
@@ -135,11 +135,11 @@ export default function SettingsModal({
 
           {/* Currency Option */}
           <div>
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5 flex items-center justify-between">
+            <label className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2.5 flex items-center justify-between">
               <span className="flex items-center gap-1.5">
-                <Coins className="w-3.5 h-3.5" /> {t.primaryCurrency}
+                <Coins className="w-3.5 h-3.5 text-emerald-400" /> {t.primaryCurrency}
               </span>
-              <span className="text-[10px] lowercase text-slate-400 font-normal">1 € ≈ 7.46 DKK</span>
+              <span className="text-[10px] text-zinc-400 font-normal">1 € ≈ 7.46 DKK</span>
             </label>
             <div className="grid grid-cols-2 gap-2">
               {[
@@ -153,12 +153,12 @@ export default function SettingsModal({
                     onClick={() => handleCurrencyChange(id as "DKK" | "EUR")}
                     className={`flex flex-col items-start p-3 rounded-2xl border text-left transition-all ${
                       isSelected
-                        ? "border-blue-500 bg-blue-50/60 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 shadow-sm"
-                        : "border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                        ? "border-emerald-500 bg-emerald-950/50 text-emerald-300 shadow-sm"
+                        : "border-zinc-800 text-zinc-300 hover:bg-zinc-800/50"
                     }`}
                   >
                     <span className="font-bold text-sm">{label}</span>
-                    <span className="text-[10px] text-slate-400">{sub}</span>
+                    <span className="text-[10px] text-zinc-400">{sub}</span>
                   </button>
                 );
               })}
@@ -167,8 +167,8 @@ export default function SettingsModal({
 
           {/* Language Option */}
           <div>
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5 flex items-center gap-1.5">
-              <Languages className="w-3.5 h-3.5" /> {t.language}
+            <label className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2.5 flex items-center gap-1.5">
+              <Languages className="w-3.5 h-3.5 text-emerald-400" /> {t.language}
             </label>
             <div className="grid grid-cols-2 gap-2">
               {[
@@ -182,12 +182,12 @@ export default function SettingsModal({
                     onClick={() => handleLanguageChange(id as "en" | "it")}
                     className={`flex flex-col items-start p-3 rounded-2xl border text-left transition-all ${
                       isSelected
-                        ? "border-blue-500 bg-blue-50/60 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 shadow-sm"
-                        : "border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                        ? "border-emerald-500 bg-emerald-950/50 text-emerald-300 shadow-sm"
+                        : "border-zinc-800 text-zinc-300 hover:bg-zinc-800/50"
                     }`}
                   >
                     <span className="font-bold text-sm">{label}</span>
-                    <span className="text-[10px] text-slate-400">{sub}</span>
+                    <span className="text-[10px] text-zinc-400">{sub}</span>
                   </button>
                 );
               })}
@@ -196,8 +196,8 @@ export default function SettingsModal({
 
           {/* Dietary Constraints & Allergens */}
           <div>
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5 flex items-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5" /> {t.dietaryConstraints}
+            <label className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2.5 flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> {t.dietaryConstraints}
             </label>
             <div className="space-y-2">
               {[
@@ -212,18 +212,18 @@ export default function SettingsModal({
                   <div
                     key={key}
                     onClick={() => toggleDietary(key as keyof UserPreferences["dietary"])}
-                    className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-100/60 dark:hover:bg-slate-800 transition-colors"
+                    className="flex items-center justify-between p-3.5 rounded-2xl bg-zinc-950 border border-zinc-800/80 cursor-pointer hover:border-zinc-700 transition-colors"
                   >
                     <div className="flex items-center gap-3">
                       <span className="text-xl">{icon}</span>
                       <div>
-                        <p className="font-bold text-sm text-slate-800 dark:text-slate-100">{label}</p>
-                        <p className="text-[11px] text-slate-400">{danish}</p>
+                        <p className="font-bold text-sm text-zinc-100">{label}</p>
+                        <p className="text-[11px] text-zinc-400">{danish}</p>
                       </div>
                     </div>
                     <div
                       className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 ${
-                        checked ? "bg-blue-600" : "bg-slate-300 dark:bg-slate-700"
+                        checked ? "bg-emerald-600" : "bg-zinc-700"
                       }`}
                     >
                       <div
@@ -240,10 +240,10 @@ export default function SettingsModal({
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/90 flex justify-end">
+        <div className="p-4 border-t border-zinc-800 bg-zinc-900/90 flex justify-end">
           <button
             onClick={onClose}
-            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 rounded-xl transition-all active:scale-95 text-sm shadow-md"
+            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl transition-all active:scale-95 text-sm shadow-md shadow-emerald-950/30"
           >
             {t.done}
           </button>

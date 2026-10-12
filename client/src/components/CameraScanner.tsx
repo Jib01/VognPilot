@@ -325,7 +325,7 @@ export default function CameraScanner() {
   const activeDietaryCount = Object.values(preferences.dietary).filter(Boolean).length;
 
   return (
-    <div className="relative w-full max-w-md mx-auto h-[100dvh] bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white overflow-hidden flex flex-col font-sans select-none transition-colors duration-200">
+    <div className="relative w-full max-w-md mx-auto h-[100dvh] bg-zinc-950 text-zinc-100 overflow-hidden flex flex-col font-sans select-none transition-colors duration-200">
       
       {/* Hidden Native File Inputs */}
       <input 
@@ -344,37 +344,34 @@ export default function CameraScanner() {
         onChange={handleGalleryUpload} 
       />
 
-      {/* Top Bar Area: VognPilot, currency badge, Settings, Cart budget status */}
-      <header className="w-full px-4 py-3 z-50 flex justify-between items-center bg-white/90 dark:bg-slate-950/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800/60 shrink-0">
-        <div className="flex items-center gap-2 cursor-pointer" onClick={reset}>
-          <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center shadow-sm">
+      {/* Top Bar Area: Fixed single-line h-14, zero wrap, dark unified palette */}
+      <header className="h-14 w-full px-4 z-50 flex justify-between items-center bg-zinc-900/95 backdrop-blur-md border-b border-zinc-800 text-zinc-100 shrink-0">
+        {/* Brand / Logo */}
+        <div className="flex items-center gap-2 cursor-pointer whitespace-nowrap flex-shrink-0" onClick={reset}>
+          <div className="w-8 h-8 rounded-xl bg-emerald-600 flex items-center justify-center shadow-sm flex-shrink-0">
             <span className="text-white font-black text-base">V</span>
           </div>
-          <h1 className="font-extrabold text-lg tracking-tight leading-none text-slate-900 dark:text-white">VognPilot</h1>
+          <h1 className="font-extrabold text-lg tracking-tight leading-none text-zinc-100">VognPilot</h1>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Currency Exchange Rate Badge */}
-          <div className="bg-slate-100 dark:bg-slate-900 text-[11px] text-slate-600 dark:text-slate-300 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700/80 font-bold flex items-center gap-1 select-none">
-            1 € ≈ 7.46 kr
-          </div>
-
+        {/* Right Actions: Settings & Live Cart Badge (No wrapping, exchange rate moved to cart footer) */}
+        <div className="flex items-center gap-2 whitespace-nowrap flex-shrink-0">
           {/* Settings Button */}
           <button 
             onClick={() => setIsSettingsOpen(true)}
-            className="p-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700/80 transition-all active:scale-95 relative"
+            className="p-2 text-zinc-300 hover:text-white bg-zinc-800/80 hover:bg-zinc-800 rounded-xl border border-zinc-700/80 transition-all active:scale-95 relative flex-shrink-0"
             aria-label="Settings"
           >
             <Settings className="w-4 h-4" />
             {activeDietaryCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 rounded-full ring-2 ring-white dark:ring-slate-950" />
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 rounded-full ring-2 ring-zinc-900" />
             )}
           </button>
 
           {/* Cart budget status button */}
           <button 
             onClick={() => setIsDrawerOpen(true)} 
-            className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-1.5"
+            className="bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white px-3 py-1.5 rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-1.5 flex-shrink-0 font-bold"
             aria-label="Shopping list and budget"
           >
             <ShoppingCart className="w-4 h-4" />
@@ -389,19 +386,19 @@ export default function CameraScanner() {
 
       {/* Main View Area */}
       {!imageUri ? (
-        // IDLE HERO STATE: Clean, Natural, Non-Robotic Home View
-        <div className="flex-1 flex flex-col justify-between p-6 overflow-y-auto hide-scrollbar bg-slate-50 dark:bg-slate-950">
+        // IDLE HERO STATE: Nordic Minimalist, Emerald Accented Home View
+        <div className="flex-1 flex flex-col justify-between p-6 overflow-y-auto hide-scrollbar bg-zinc-950">
           
           {/* Center guidance */}
           <div className="flex-1 flex flex-col items-center justify-center text-center my-auto py-8">
-            <div className="w-20 h-20 rounded-3xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200/80 dark:border-blue-900/60 flex items-center justify-center mb-6 shadow-sm">
-              <Camera className="w-9 h-9 text-blue-600 dark:text-blue-400" />
+            <div className="w-20 h-20 rounded-3xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mb-6 shadow-sm">
+              <Camera className="w-9 h-9 text-emerald-500" />
             </div>
 
-            <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+            <h2 className="text-2xl font-black text-zinc-100 tracking-tight">
               {t.homeTitle}
             </h2>
-            <p className="text-slate-500 dark:text-slate-400 text-sm mt-3 max-w-xs leading-relaxed font-normal">
+            <p className="text-zinc-400 text-sm mt-3 max-w-xs leading-relaxed font-normal">
               {t.homeSubtitle}
             </p>
 
@@ -409,7 +406,7 @@ export default function CameraScanner() {
             {activeDietaryCount > 0 && (
               <div 
                 onClick={() => setIsSettingsOpen(true)}
-                className="mt-5 inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200 dark:border-emerald-500/40 rounded-full text-emerald-700 dark:text-emerald-400 text-xs font-semibold cursor-pointer hover:opacity-85 transition-opacity"
+                className="mt-5 inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-950/60 border border-emerald-500/40 rounded-full text-emerald-400 text-xs font-semibold cursor-pointer hover:opacity-85 transition-opacity"
               >
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>
@@ -423,32 +420,32 @@ export default function CameraScanner() {
 
           {/* Bottom Action Bar */}
           <div className="w-full space-y-3 pb-4">
-            {/* Primary Button: "Take Photo" */}
+            {/* Primary Button: "Take Photo" (Nordic Emerald CTA) */}
             <button
               onClick={() => cameraInputRef.current?.click()}
-              className="w-full bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white py-4 px-6 rounded-2xl flex items-center justify-center gap-3 shadow-lg shadow-blue-600/25 transition-all active:scale-[0.98] font-bold text-base"
+              className="w-full bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white py-4 px-6 rounded-2xl flex items-center justify-center gap-3 shadow-lg shadow-emerald-900/30 transition-all active:scale-[0.98] font-bold text-base"
             >
               <Camera className="w-5 h-5" />
               <span>{t.takePhoto}</span>
             </button>
 
-            {/* Secondary Button: "Gallery" */}
+            {/* Secondary Button: "Gallery" (Enhanced border & contrast) */}
             <button
               onClick={() => galleryInputRef.current?.click()}
-              className="w-full bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 active:bg-slate-200 dark:active:bg-slate-950 text-slate-700 dark:text-slate-200 py-3.5 px-6 rounded-2xl flex items-center justify-center gap-2.5 border border-slate-200 dark:border-slate-800 transition-all active:scale-[0.98] font-semibold text-sm shadow-sm"
+              className="w-full border border-zinc-700 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-200 py-3.5 px-6 rounded-2xl flex items-center justify-center gap-2.5 transition-all active:scale-[0.98] font-semibold text-sm shadow-sm"
             >
-              <Upload className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+              <Upload className="w-4 h-4 text-zinc-400" />
               <span>{t.gallery}</span>
             </button>
           </div>
         </div>
       ) : (
         // ACTIVE SCAN STATE: Image Viewport + Seamless Overlapping Bottom Sheet
-        <div className="relative flex-1 w-full overflow-hidden flex flex-col bg-slate-950">
+        <div className="relative flex-1 w-full overflow-hidden flex flex-col bg-zinc-950">
           
           {/* Scanned Image Viewport Container */}
           <div 
-            className="relative w-full bg-slate-950 flex-shrink-0 flex flex-col items-center justify-center overflow-hidden z-10"
+            className="relative w-full bg-zinc-950 flex-shrink-0 flex flex-col items-center justify-center overflow-hidden z-10"
             style={{
               height: `${Math.max(0, 100 - sheetHeight)}%`,
               transition: isDraggingSheet ? 'none' : 'height 0.35s cubic-bezier(0.2, 0.9, 0.3, 1)'
@@ -464,12 +461,12 @@ export default function CameraScanner() {
               
               {/* Subtle Calm Scan Pulse Overlay during loading */}
               {loading && (
-                <div className="absolute inset-0 bg-slate-950/30 backdrop-blur-[0.5px] pointer-events-none overflow-hidden">
-                  <div className="absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-blue-400 to-transparent animate-scan-laser opacity-80" />
+                <div className="absolute inset-0 bg-zinc-950/30 backdrop-blur-[0.5px] pointer-events-none overflow-hidden">
+                  <div className="absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent animate-scan-laser opacity-80" />
                 </div>
               )}
 
-              {/* Decluttered Bounding Boxes (Single Selected Focus & Clean Labels) */}
+              {/* Bounding Boxes: Active Box STRICTLY matches Active Product Card border */}
               {!loading && analysis && (
                 <div className="absolute inset-0 pointer-events-none">
                   {analysis.detected_products.map((prod, idx) => {
@@ -489,10 +486,10 @@ export default function CameraScanner() {
                         onClick={() => handleSelectBox(isSelected ? null : idx)}
                         className={`absolute cursor-pointer transition-all duration-200 pointer-events-auto rounded-lg ${
                           isSelected
-                            ? "border-2 border-blue-500 bg-blue-500/15 shadow-md z-[70]"
+                            ? "border-2 border-emerald-500 bg-emerald-500/15 shadow-md z-[70]"
                             : isWinner
-                            ? "border border-emerald-500/80 bg-emerald-500/10 hover:border-emerald-400 z-[60]"
-                            : "border border-white/60 bg-black/15 hover:border-white z-[50]"
+                            ? "border border-dashed border-teal-400/80 bg-teal-500/10 hover:border-teal-300 z-[60]"
+                            : "border border-white/50 bg-black/20 hover:border-white z-[50]"
                         }`}
                         style={{ top: `${top}%`, left: `${left}%`, width: `${width}%`, height: `${height}%` }}
                       >
@@ -501,10 +498,10 @@ export default function CameraScanner() {
                           <div 
                             className={`absolute -top-3 left-1 transition-all ${
                               isSelected 
-                                ? "bg-blue-600 text-white font-black text-xs px-2.5 py-1 rounded-md shadow-md scale-105"
+                                ? "bg-emerald-600 text-white font-black text-xs px-2.5 py-1 rounded-md shadow-md scale-105"
                                 : isWinner
-                                ? "bg-emerald-600 text-white font-bold text-[10px] px-1.5 py-0.5 rounded shadow-sm"
-                                : "bg-slate-900/90 text-white font-semibold text-[10px] px-1.5 py-0.5 rounded shadow-sm backdrop-blur-sm"
+                                ? "bg-teal-700 text-white font-bold text-[10px] px-1.5 py-0.5 rounded shadow-sm"
+                                : "bg-zinc-900/90 text-zinc-200 font-semibold text-[10px] px-1.5 py-0.5 rounded shadow-sm backdrop-blur-sm"
                             }`}
                           >
                             {preferences.currency === "EUR" ? `€${convertDKKtoEUR(price)}` : `${price} kr`}
@@ -525,49 +522,49 @@ export default function CameraScanner() {
             </div>
           </div>
 
-          {/* Multi-Step Progressive Loading Bottom Sheet (Seamless Overlap) */}
+          {/* Multi-Step Progressive Loading Bottom Sheet (Seamless Overlap & Zinc palette) */}
           {loading && (
             <div 
-              className="w-full bg-slate-50 dark:bg-slate-900 flex flex-col overflow-hidden relative z-30 -mt-5 rounded-t-3xl shadow-[0_-12px_36px_rgba(0,0,0,0.25)] border-t border-slate-200/80 dark:border-slate-800"
+              className="w-full bg-zinc-900 flex flex-col overflow-hidden relative z-30 -mt-5 rounded-t-3xl shadow-[0_-12px_36px_rgba(0,0,0,0.35)] border-t border-zinc-800"
               style={{
                 height: `calc(${sheetHeight}% + 20px)`,
                 transition: isDraggingSheet ? 'none' : 'height 0.35s cubic-bezier(0.2, 0.9, 0.3, 1)'
               }}
             >
-              <div className="p-4 pt-2 bg-white dark:bg-slate-900 rounded-t-3xl flex-1 flex flex-col h-full shadow-sm overflow-hidden text-slate-800 dark:text-slate-100">
+              <div className="p-4 pt-2 bg-zinc-900 rounded-t-3xl flex-1 flex flex-col h-full shadow-sm overflow-hidden text-zinc-100">
                 <div 
                   onPointerDown={(e) => startDrag(e.clientY)}
                   onClick={toggleSheetSnap}
                   className="mx-auto w-full pt-1 pb-2 flex flex-col items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none group"
                 >
-                  <div className="w-12 h-1.5 rounded-full bg-slate-300 dark:bg-slate-700 group-hover:bg-slate-400 dark:group-hover:bg-slate-600 transition-colors" />
+                  <div className="w-12 h-1.5 rounded-full bg-zinc-700 group-hover:bg-zinc-600 transition-colors" />
                 </div>
                 
                 <div className="flex justify-between items-center px-2 mb-3 shrink-0">
                   <div className="flex items-center gap-2">
-                    <span className="font-bold text-slate-900 dark:text-white text-base tracking-tight">
+                    <span className="font-bold text-zinc-100 text-base tracking-tight">
                       {t.analyzingShelf}
                     </span>
-                    <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-ping" />
+                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
                   </div>
                 </div>
 
                 {/* Multi-Step Checklist Card */}
-                <div className="mx-2 mb-4 p-4 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="mx-2 mb-4 p-4 bg-zinc-950 text-zinc-200 rounded-2xl shadow-sm border border-zinc-800 space-y-3">
                   {/* Step 1 */}
                   <div className="flex items-center gap-3 text-xs">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                    <span className="font-semibold text-emerald-700 dark:text-emerald-400">{t.photoProcessed}</span>
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span className="font-semibold text-emerald-400">{t.photoProcessed}</span>
                   </div>
 
                   {/* Step 2 */}
                   <div className="flex items-center gap-3 text-xs">
                     {loadingStep >= 1 ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                     ) : (
-                      <div className="w-4 h-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin shrink-0" />
+                      <div className="w-4 h-4 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin shrink-0" />
                     )}
-                    <span className={`font-semibold ${loadingStep >= 1 ? 'text-emerald-700 dark:text-emerald-400' : 'text-blue-600 dark:text-blue-400'}`}>
+                    <span className={`font-semibold ${loadingStep >= 1 ? 'text-emerald-400' : 'text-zinc-300'}`}>
                       {loadingStep >= 1 ? t.locatingProducts : (preferences.language === 'it' ? 'Individuazione prodotti...' : 'Locating products...')}
                     </span>
                   </div>
@@ -575,13 +572,13 @@ export default function CameraScanner() {
                   {/* Step 3 */}
                   <div className="flex items-center gap-3 text-xs">
                     {loadingStep >= 2 ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                     ) : loadingStep === 1 ? (
-                      <div className="w-4 h-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin shrink-0" />
+                      <div className="w-4 h-4 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin shrink-0" />
                     ) : (
-                      <Circle className="w-4 h-4 text-slate-300 dark:text-slate-700 shrink-0" />
+                      <Circle className="w-4 h-4 text-zinc-700 shrink-0" />
                     )}
-                    <span className={`font-medium ${loadingStep >= 2 ? 'text-emerald-700 dark:text-emerald-400' : loadingStep === 1 ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}>
+                    <span className={`font-medium ${loadingStep >= 2 ? 'text-emerald-400' : loadingStep === 1 ? 'text-zinc-300' : 'text-zinc-500'}`}>
                       {loadingStep >= 2 ? t.translatingLabels : (preferences.language === 'it' ? 'Lettura termini e prezzi...' : 'Reading terms & prices...')}
                     </span>
                   </div>
@@ -589,13 +586,13 @@ export default function CameraScanner() {
                   {/* Step 4 */}
                   <div className="flex items-center gap-3 text-xs">
                     {loadingStep >= 3 ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                     ) : loadingStep === 2 ? (
-                      <div className="w-4 h-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin shrink-0" />
+                      <div className="w-4 h-4 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin shrink-0" />
                     ) : (
-                      <Circle className="w-4 h-4 text-slate-300 dark:text-slate-700 shrink-0" />
+                      <Circle className="w-4 h-4 text-zinc-700 shrink-0" />
                     )}
-                    <span className={`font-medium ${loadingStep >= 3 ? 'text-emerald-700 dark:text-emerald-400' : loadingStep === 2 ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}>
+                    <span className={`font-medium ${loadingStep >= 3 ? 'text-emerald-400' : loadingStep === 2 ? 'text-zinc-300' : 'text-zinc-500'}`}>
                       {loadingStep >= 3 ? t.matchingDietary : (preferences.language === 'it' ? 'Verifica preferenze alimentari...' : 'Checking dietary preferences...')}
                     </span>
                   </div>
@@ -606,13 +603,13 @@ export default function CameraScanner() {
                   {[1, 2].map((idx) => (
                     <div 
                       key={idx}
-                      className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm animate-pulse"
+                      className="flex items-center justify-between p-4 bg-zinc-950/60 rounded-2xl border border-zinc-800 shadow-sm animate-pulse"
                     >
                       <div className="flex-1 min-w-0 pr-4 space-y-2">
-                        <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-3/4" />
-                        <div className="h-3 bg-slate-100 dark:bg-slate-800 rounded w-1/2" />
+                        <div className="h-4 bg-zinc-800 rounded w-3/4" />
+                        <div className="h-3 bg-zinc-850 rounded w-1/2" />
                       </div>
-                      <div className="w-10 h-10 bg-slate-200 dark:bg-slate-700 rounded-xl shrink-0" />
+                      <div className="w-10 h-10 bg-zinc-800 rounded-xl shrink-0" />
                     </div>
                   ))}
                 </div>
@@ -623,7 +620,7 @@ export default function CameraScanner() {
           {/* Product List / Details Sheet (Seamless Overlap) */}
           {analysis && !loading && (
             <div 
-              className="w-full flex-1 flex flex-col overflow-hidden relative z-30 -mt-5 rounded-t-3xl shadow-[0_-12px_36px_rgba(0,0,0,0.25)]"
+              className="w-full flex-1 flex flex-col overflow-hidden relative z-30 -mt-5 rounded-t-3xl shadow-[0_-12px_36px_rgba(0,0,0,0.35)]"
               style={{
                 height: `calc(${sheetHeight}% + 20px)`,
                 transition: isDraggingSheet ? 'none' : 'height 0.35s cubic-bezier(0.2, 0.9, 0.3, 1)'
@@ -650,14 +647,14 @@ export default function CameraScanner() {
       {/* Actionable Error State Dialog */}
       {error && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center z-[120] px-6 text-center animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl flex flex-col items-center text-slate-900 dark:text-white">
-            <div className="w-14 h-14 rounded-2xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 flex items-center justify-center mb-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl flex flex-col items-center text-zinc-100">
+            <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center mb-4">
               <AlertTriangle className="w-7 h-7 text-rose-500" />
             </div>
             <h3 className="font-extrabold text-lg tracking-tight mb-2">
               {t.couldNotRead}
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">
+            <p className="text-xs text-zinc-400 mb-6 leading-relaxed">
               {t.tryCloser}
             </p>
             <div className="w-full flex flex-col gap-2.5">
@@ -666,7 +663,7 @@ export default function CameraScanner() {
                   setError(null);
                   cameraInputRef.current?.click();
                 }}
-                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-blue-600/25 transition-all active:scale-95 text-sm flex items-center justify-center gap-2"
+                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-emerald-950/25 transition-all active:scale-95 text-sm flex items-center justify-center gap-2"
               >
                 <Camera className="w-4 h-4" />
                 {t.retakePhoto}
@@ -676,7 +673,7 @@ export default function CameraScanner() {
                   setError(null);
                   reset();
                 }}
-                className="w-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold py-2.5 rounded-xl transition-all active:scale-95 text-xs"
+                className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-semibold py-2.5 rounded-xl transition-all active:scale-95 text-xs border border-zinc-700"
               >
                 {t.dismiss}
               </button>
