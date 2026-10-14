@@ -1,9 +1,7 @@
-export interface ProductBoundingBox {
-  box_2d: [number, number, number, number];
+export interface ProductCard {
   label: string;
   danish_term: string;
   unit_price_dkk?: number | null;
-  unit: string;
   package_price_dkk?: number | null;
   pant_fee_dkk?: number | null;
   multipack_offer?: string | null;
@@ -17,10 +15,9 @@ export interface ProductBoundingBox {
   matches_constraints: boolean;
 }
 
-export interface RawShelfAnalysis {
-  detected_products: ProductBoundingBox[];
+export interface ScanResult {
+  detected_products: ProductCard[];
   recommended_product_index?: number | null;
-  confidence_score: number;
-  is_blurry_or_obscured: boolean;
-  decision_reason: string;
+  decision_reason?: string | null;
+  is_blurry_or_obscured?: boolean;
 }
