@@ -42,8 +42,8 @@ export default function CameraScanner() {
   const [isBudgetDialogOpen, setIsBudgetDialogOpen] = useState(false);
   const [tempBudget, setTempBudget] = useState('200');
 
-  // Live cart data from Dexie
-  const cartItems = useLiveQuery(() => db.groceryList.orderBy('created_at').reverse().toArray()) || [];
+  // Live cart data from Dexie (order by auto-increment id reverse = newest first)
+  const cartItems = useLiveQuery(() => db.groceryList.orderBy('id').reverse().toArray()) || [];
   const productsTotalDKK = cartItems.reduce((acc, item) => acc + ((item.price_dkk || 0) * (item.quantity || 1)), 0);
   const pantTotalDKK = cartItems.reduce((acc, item) => acc + ((item.pant_fee_dkk || 0) * (item.quantity || 1)), 0);
   const totalDKK = productsTotalDKK + pantTotalDKK;
@@ -62,23 +62,28 @@ export default function CameraScanner() {
   }, []);
 
   // User Preferences
-  const [preferences, setPreferences] = useState<UserPreferences>(() => {
+  const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_PREFERENCES);
+
+  useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
         const savedTheme = localStorage.getItem('vognpilot_theme') as 'dark' | 'light' | 'system' | null;
         const savedLang = localStorage.getItem('vognpilot_language') as 'en' | 'it' | null;
         const savedCurrency = localStorage.getItem('vognpilot_currency') as 'DKK' | 'EUR' | null;
         const savedDietary = localStorage.getItem('vognpilot_dietary');
-        return {
-          theme: savedTheme || 'system',
-          language: savedLang || 'en',
-          currency: savedCurrency || 'DKK',
-          dietary: savedDietary ? JSON.parse(savedDietary) : DEFAULT_PREFERENCES.dietary,
-        };
-      } catch { return DEFAULT_PREFERENCES; }
+        if (savedTheme || savedLang || savedCurrency || savedDietary) {
+          setPreferences({
+            theme: savedTheme || 'system',
+            language: savedLang || 'en',
+            currency: savedCurrency || 'DKK',
+            dietary: savedDietary ? JSON.parse(savedDietary) : DEFAULT_PREFERENCES.dietary,
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to parse preferences from localStorage:', err);
+      }
     }
-    return DEFAULT_PREFERENCES;
-  });
+  }, []);
 
   const t = getTranslation(preferences.language);
 
@@ -193,8 +198,12 @@ export default function CameraScanner() {
     if (existing?.id) {
       await db.groceryList.update(existing.id, { quantity: (existing.quantity || 1) + 1, sync_status: 'pending' });
     } else {
+      const uuid = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : 'item-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9);
+
       await db.groceryList.add({
-        uuid: crypto.randomUUID(), name: prod.label, danish_term: prod.danish_term,
+        uuid, name: prod.label, danish_term: prod.danish_term,
         price_dkk: priceDkk, price_eur: priceEur, pant_fee_dkk: pantFee,
         quantity: 1, is_checked: false, sync_status: 'pending', created_at: Date.now(),
       });

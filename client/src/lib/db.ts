@@ -22,6 +22,9 @@ export class VognPilotDB extends Dexie {
     this.version(1).stores({
       groceryList: '++id, uuid, is_checked, sync_status'
     });
+    this.version(2).stores({
+      groceryList: '++id, uuid, is_checked, sync_status, created_at'
+    });
   }
 }
 
