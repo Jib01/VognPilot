@@ -111,7 +111,7 @@ export default function CameraScanner() {
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [view]);
 
-  const compressImage = (blob: Blob): Promise<Blob> =>
+  const compressImage = (blob: Blob): Promise<string> =>
     new Promise((resolve, reject) => {
       const img = new Image();
       const url = URL.createObjectURL(blob);
@@ -125,11 +125,18 @@ export default function CameraScanner() {
         canvas.width = Math.round(width);
         canvas.height = Math.round(height);
         const ctx = canvas.getContext('2d');
-        if (!ctx) { resolve(blob); return; }
+        if (!ctx) {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+          return;
+        }
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        canvas.toBlob(b => b ? resolve(b) : resolve(blob), 'image/jpeg', 0.82);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+        resolve(dataUrl);
       };
       img.onerror = reject;
       img.src = url;
@@ -141,9 +148,8 @@ export default function CameraScanner() {
     setScanResult(null);
 
     try {
-      const compressed = await compressImage(file);
-      const formData = new FormData();
-      formData.append('file', compressed, 'scan.jpg');
+      const base64DataUrl = await compressImage(file);
+      const base64 = base64DataUrl.split(',')[1] || base64DataUrl;
 
       const dietaryList: string[] = [];
       if (preferences.dietary.vegetarian) dietaryList.push('vegetarian');
@@ -152,21 +158,35 @@ export default function CameraScanner() {
       if (preferences.dietary.lactoseFree) dietaryList.push('lactose_free');
       if (preferences.dietary.glutenFree) dietaryList.push('gluten_free');
 
-      formData.append('preferences', JSON.stringify({
-        dietary_lifestyle: dietaryList,
-        currency: { primary: preferences.currency, fixed_rate: 7.46 },
-      }));
+      // Call local Vercel API Route without trailing slash (no 308 redirect, clean JSON)
+      const res = await fetch('/api/v1/scan', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          image: base64,
+          mimeType: 'image/jpeg',
+          preferences: {
+            dietary_lifestyle: dietaryList,
+            currency: { primary: preferences.currency, fixed_rate: 7.46 },
+          },
+        }),
+      });
 
-      // Call local Vercel API Route (no cold start, no Render)
-      const res = await fetch('/api/v1/scan/', { method: 'POST', body: formData });
+      if (!res.ok) {
+        const errorJson = await res.json().catch(() => null);
+        const errorMsg = errorJson?.error || `Server error: ${res.status}`;
+        throw new Error(errorMsg);
+      }
 
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data: ScanResult = await res.json();
       setScanResult(data);
       setView('results');
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('[Scanner]', err);
-      setError(t.tryCloser);
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg || t.tryCloser);
       setView('dashboard');
     }
   };
@@ -500,7 +520,9 @@ export default function CameraScanner() {
               <AlertTriangle className="w-7 h-7 text-rose-400" />
             </div>
             <h3 className="font-extrabold text-lg mb-2">{t.couldNotRead}</h3>
-            <p className="text-xs text-zinc-400 mb-6 leading-relaxed">{t.tryCloser}</p>
+            <p className="text-xs text-zinc-400 mb-6 leading-relaxed break-words max-h-32 overflow-y-auto px-1">
+              {error}
+            </p>
             <div className="w-full flex flex-col gap-2.5">
               <button
                 onClick={() => { setError(null); cameraInputRef.current?.click(); }}

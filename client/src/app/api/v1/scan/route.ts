@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI, HarmBlockThreshold, HarmCategory } from '@google/generative-ai';
 
-const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 const SHELF_PROMPT = `You are an expert Danish grocery store product scanner. Analyze this shelf image and identify all visible products with price tags.
 
@@ -46,20 +48,47 @@ Rules:
 - Return ONLY the JSON object, no markdown, no explanation`;
 
 export async function POST(request: NextRequest) {
-  if (!process.env.GEMINI_API_KEY) {
-    return NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 });
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  if (!apiKey) {
+    console.error('[Scan API Route] GEMINI_API_KEY is not defined in process.env');
+    return NextResponse.json(
+      { error: 'GEMINI_API_KEY non trovata su Vercel. Aggiungila nelle Environment Variables di Vercel.' },
+      { status: 500 }
+    );
   }
 
   try {
-    const formData = await request.formData();
-    const file = formData.get('file') as File | null;
-    const preferencesStr = formData.get('preferences') as string | null;
+    let base64 = '';
+    let mimeType = 'image/jpeg';
+    let preferences: any = {};
 
-    if (!file) {
-      return NextResponse.json({ error: 'No image file provided' }, { status: 400 });
+    const contentType = request.headers.get('content-type') || '';
+
+    if (contentType.includes('application/json')) {
+      const body = await request.json();
+      base64 = body.image || '';
+      if (base64.includes('base64,')) {
+        base64 = base64.split('base64,')[1];
+      }
+      mimeType = body.mimeType || 'image/jpeg';
+      preferences = body.preferences || {};
+    } else {
+      const formData = await request.formData();
+      const file = formData.get('file') as File | null;
+      const preferencesStr = formData.get('preferences') as string | null;
+
+      if (file) {
+        const bytes = await file.arrayBuffer();
+        base64 = Buffer.from(bytes).toString('base64');
+        mimeType = (file.type && file.type.startsWith('image/')) ? file.type : 'image/jpeg';
+      }
+      preferences = preferencesStr ? JSON.parse(preferencesStr) : {};
     }
 
-    const preferences = preferencesStr ? JSON.parse(preferencesStr) : {};
+    if (!base64 || base64.length === 0) {
+      return NextResponse.json({ error: 'Nessuna immagine ricevuta.' }, { status: 400 });
+    }
+
     const dietary: string[] = preferences.dietary_lifestyle || [];
     const currency = preferences.currency || { primary: 'DKK', fixed_rate: 7.46 };
 
@@ -69,51 +98,31 @@ export async function POST(request: NextRequest) {
       dietaryContext = `\n\nUser dietary preferences: ${dietary.join(', ')}. Mark matches_constraints: true for products that satisfy ALL these preferences.`;
     }
 
-    // Convert file to base64
-    const bytes = await file.arrayBuffer();
-    const base64 = Buffer.from(bytes).toString('base64');
-    const mimeType = (file.type && file.type.startsWith('image/')) ? file.type : 'image/jpeg';
+    // Call gemini-3.8-flash ONLY
+    const genai = new GoogleGenerativeAI(apiKey);
+    const model = genai.getGenerativeModel({
+      model: 'gemini-3.8-flash',
+      safetySettings: [
+        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+      ],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        temperature: 0.1,
+        maxOutputTokens: 2048,
+      },
+    });
 
-    // Candidate models in priority order
-    const CANDIDATE_MODELS = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-flash-latest'];
-    let lastError: Error | null = null;
-    let responseText = '';
+    const result = await model.generateContent([
+      { text: SHELF_PROMPT + dietaryContext + `\n\nPrimary display currency: ${currency.primary} (rate: 1 EUR = ${currency.fixed_rate} DKK)` },
+      { inlineData: { mimeType, data: base64 } },
+    ]);
 
-    for (const modelName of CANDIDATE_MODELS) {
-      try {
-        const model = genai.getGenerativeModel({
-          model: modelName,
-          safetySettings: [
-            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-          ],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            temperature: 0.1,
-            maxOutputTokens: 2048,
-          },
-        });
-
-        const result = await model.generateContent([
-          { text: SHELF_PROMPT + dietaryContext + `\n\nPrimary display currency: ${currency.primary} (rate: 1 EUR = ${currency.fixed_rate} DKK)` },
-          { inlineData: { mimeType, data: base64 } },
-        ]);
-
-        responseText = result.response.text();
-        if (responseText) {
-          lastError = null;
-          break;
-        }
-      } catch (err: unknown) {
-        lastError = err instanceof Error ? err : new Error(String(err));
-        console.warn(`[Scan API Route] Model ${modelName} failed, trying next:`, lastError.message);
-      }
-    }
-
-    if (lastError && !responseText) {
-      throw lastError;
+    const responseText = result.response.text();
+    if (!responseText) {
+      throw new Error('Gemini ha restituito una risposta vuota.');
     }
 
     // Parse JSON — strip any accidental markdown fences
@@ -123,16 +132,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(data);
   } catch (error: unknown) {
     console.error('[Scan API Route] Error:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    
-    // If JSON parse error, still return a valid blurry/obscured response
+    const message = error instanceof Error ? error.message : String(error);
+
+    // If JSON parse error from model response
     if (message.includes('JSON')) {
       return NextResponse.json(
-        { detected_products: [], is_blurry_or_obscured: true, decision_reason: null, recommended_product_index: null },
+        { detected_products: [], is_blurry_or_obscured: true, decision_reason: 'Scansione poco chiara o non analizzabile.', recommended_product_index: null },
         { status: 200 }
       );
     }
-    
-    return NextResponse.json({ error: `Scan failed: ${message}` }, { status: 500 });
+
+    return NextResponse.json({ error: `Errore scansione AI: ${message}` }, { status: 500 });
   }
 }
