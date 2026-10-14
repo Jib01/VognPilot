@@ -74,29 +74,48 @@ export async function POST(request: NextRequest) {
     const base64 = Buffer.from(bytes).toString('base64');
     const mimeType = (file.type && file.type.startsWith('image/')) ? file.type : 'image/jpeg';
 
-    // Use gemini-2.0-flash for speed (no thinking overhead)
-    const model = genai.getGenerativeModel({
-      model: 'gemini-2.0-flash',
-      safetySettings: [
-        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-      ],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0.1,
-        maxOutputTokens: 2048,
-      },
-    });
+    // Candidate models in priority order
+    const CANDIDATE_MODELS = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-flash-latest'];
+    let lastError: Error | null = null;
+    let responseText = '';
 
-    const result = await model.generateContent([
-      { text: SHELF_PROMPT + dietaryContext + `\n\nPrimary display currency: ${currency.primary} (rate: 1 EUR = ${currency.fixed_rate} DKK)` },
-      { inlineData: { mimeType, data: base64 } },
-    ]);
+    for (const modelName of CANDIDATE_MODELS) {
+      try {
+        const model = genai.getGenerativeModel({
+          model: modelName,
+          safetySettings: [
+            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          ],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.1,
+            maxOutputTokens: 2048,
+          },
+        });
 
-    const responseText = result.response.text();
-    
+        const result = await model.generateContent([
+          { text: SHELF_PROMPT + dietaryContext + `\n\nPrimary display currency: ${currency.primary} (rate: 1 EUR = ${currency.fixed_rate} DKK)` },
+          { inlineData: { mimeType, data: base64 } },
+        ]);
+
+        responseText = result.response.text();
+        if (responseText) {
+          lastError = null;
+          break;
+        }
+      } catch (err: unknown) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        console.warn(`[Scan API Route] Model ${modelName} failed, trying next:`, lastError.message);
+      }
+    }
+
+    if (lastError && !responseText) {
+      throw lastError;
+    }
+
     // Parse JSON — strip any accidental markdown fences
     const cleaned = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     const data = JSON.parse(cleaned);
@@ -106,7 +125,7 @@ export async function POST(request: NextRequest) {
     console.error('[Scan API Route] Error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
     
-    // If JSON parse error, still return a valid error response
+    // If JSON parse error, still return a valid blurry/obscured response
     if (message.includes('JSON')) {
       return NextResponse.json(
         { detected_products: [], is_blurry_or_obscured: true, decision_reason: null, recommended_product_index: null },
@@ -114,6 +133,6 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    return NextResponse.json({ error: 'Scan failed. Please try again.' }, { status: 500 });
+    return NextResponse.json({ error: `Scan failed: ${message}` }, { status: 500 });
   }
 }
