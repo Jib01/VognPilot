@@ -111,6 +111,7 @@ export default function CameraScanner() {
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [view]);
 
+  // Compress image to max 768px with 0.68 JPEG quality (~45-60 KB)
   const compressImage = (blob: Blob): Promise<string> =>
     new Promise((resolve, reject) => {
       const img = new Image();
@@ -119,7 +120,7 @@ export default function CameraScanner() {
         URL.revokeObjectURL(url);
         const canvas = document.createElement('canvas');
         let { width, height } = img;
-        const max = 1024;
+        const max = 768; // Max 768px for lightning speed and minimal token consumption
         if (width > height && width > max) { height = (height * max) / width; width = max; }
         else if (height > max) { width = (width * max) / height; height = max; }
         canvas.width = Math.round(width);
@@ -133,9 +134,9 @@ export default function CameraScanner() {
           return;
         }
         ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
+        ctx.imageSmoothingQuality = 'medium';
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.68);
         resolve(dataUrl);
       };
       img.onerror = reject;
@@ -151,6 +152,22 @@ export default function CameraScanner() {
       const base64DataUrl = await compressImage(file);
       const base64 = base64DataUrl.split(',')[1] || base64DataUrl;
 
+      // Client-side cache check (sessionStorage)
+      const cacheKey = `vogn_scan_${base64.length}_${base64.slice(0, 30)}_${base64.slice(-30)}`;
+      if (typeof window !== 'undefined') {
+        const cached = sessionStorage.getItem(cacheKey);
+        if (cached) {
+          try {
+            const parsed: ScanResult = JSON.parse(cached);
+            setScanResult(parsed);
+            setView('results');
+            return;
+          } catch {
+            // ignore cache parse failure
+          }
+        }
+      }
+
       const dietaryList: string[] = [];
       if (preferences.dietary.vegetarian) dietaryList.push('vegetarian');
       if (preferences.dietary.vegan) dietaryList.push('vegan');
@@ -158,7 +175,7 @@ export default function CameraScanner() {
       if (preferences.dietary.lactoseFree) dietaryList.push('lactose_free');
       if (preferences.dietary.glutenFree) dietaryList.push('gluten_free');
 
-      // Call local Vercel API Route without trailing slash (no 308 redirect, clean JSON)
+      // Call local Vercel API Route with 16s frontend timeout
       const res = await fetch('/api/v1/scan', {
         method: 'POST',
         headers: {
@@ -172,6 +189,7 @@ export default function CameraScanner() {
             currency: { primary: preferences.currency, fixed_rate: 7.46 },
           },
         }),
+        signal: AbortSignal.timeout(16000),
       });
 
       if (!res.ok) {
@@ -181,6 +199,16 @@ export default function CameraScanner() {
       }
 
       const data: ScanResult = await res.json();
+
+      // Store in sessionStorage cache
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem(cacheKey, JSON.stringify(data));
+        } catch {
+          // sessionStorage quota exceeded, silent ignore
+        }
+      }
+
       setScanResult(data);
       setView('results');
     } catch (err: unknown) {
@@ -189,6 +217,95 @@ export default function CameraScanner() {
       setError(msg || t.tryCloser);
       setView('dashboard');
     }
+  };
+
+  // Instant demo scan (zero API calls, 250ms response)
+  const handleInstantDemoScan = () => {
+    setView('scanning');
+    setError(null);
+    setImageUri('/icon-512.svg');
+
+    setTimeout(() => {
+      const demoResult: ScanResult = {
+        is_demo_fallback: true,
+        notice: "Scaffale dimostrativo danese caricato con successo (Zero consumo API)",
+        decision_reason: "4 prodotti tipici di un supermercato danese con prezzi in DKK/EUR, Pant e tag dietetici.",
+        is_blurry_or_obscured: false,
+        recommended_product_index: 0,
+        detected_products: [
+          {
+            label: "Arla Organic Semi-Skimmed Milk 1L",
+            danish_term: "Arla Økologisk Letmælk 1L",
+            package_price_dkk: 14.50,
+            unit_price_dkk: 14.50,
+            pant_fee_dkk: null,
+            multipack_offer: null,
+            fat_percentage: 1.5,
+            sugar_g_per_100g: 4.7,
+            protein_g_per_100g: 3.5,
+            is_organic: true,
+            is_lactose_free: false,
+            is_plant_based: false,
+            is_gluten_free: true,
+            matches_constraints: true,
+            summary: "Latte fresco biologico danese parzialmente scremato, ricco di calcio",
+          },
+          {
+            label: "Faxe Kondi Lemon/Lime Soda 330ml",
+            danish_term: "Faxe Kondi 33cl",
+            package_price_dkk: 8.50,
+            unit_price_dkk: 25.75,
+            pant_fee_dkk: 1.0,
+            multipack_offer: "Ta' 3 for 20 kr",
+            fat_percentage: 0,
+            sugar_g_per_100g: 8.9,
+            protein_g_per_100g: 0,
+            is_organic: false,
+            is_lactose_free: true,
+            is_plant_based: true,
+            is_gluten_free: true,
+            matches_constraints: true,
+            summary: "Bibita danese agli agrumi con cauzione Pant A (+1 kr)",
+          },
+          {
+            label: "Pågen Cinnamon Swirls 260g",
+            danish_term: "Pågen Gifflar Kanel 260g",
+            package_price_dkk: 22.00,
+            unit_price_dkk: 84.60,
+            pant_fee_dkk: null,
+            multipack_offer: null,
+            fat_percentage: 12.0,
+            sugar_g_per_100g: 22.0,
+            protein_g_per_100g: 6.5,
+            is_organic: false,
+            is_lactose_free: false,
+            is_plant_based: false,
+            is_gluten_free: false,
+            matches_constraints: false,
+            summary: "Morbidi dolcetti scandinavi alla cannella per la pausa Fika",
+          },
+          {
+            label: "Lurpak Salted Spreadable Butter 200g",
+            danish_term: "Lurpak Smørbar 200g",
+            package_price_dkk: 26.95,
+            unit_price_dkk: 134.75,
+            pant_fee_dkk: null,
+            multipack_offer: null,
+            fat_percentage: 80.0,
+            sugar_g_per_100g: 0.7,
+            protein_g_per_100g: 0.6,
+            is_organic: false,
+            is_lactose_free: false,
+            is_plant_based: false,
+            is_gluten_free: true,
+            matches_constraints: false,
+            summary: "Burro salato spalmabile iconico della tradizione danese",
+          },
+        ],
+      };
+      setScanResult(demoResult);
+      setView('results');
+    }, 250);
   };
 
   const handleCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -404,12 +521,19 @@ export default function CameraScanner() {
           </div>
 
           {/* Cart Items (scrollable) */}
-          <div className="flex-1 overflow-y-auto hide-scrollbar px-3 py-3 space-y-2 pb-28">
+          <div className="flex-1 overflow-y-auto hide-scrollbar px-3 py-3 space-y-2 pb-36">
             {cartItems.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-zinc-500 space-y-3 py-12">
+              <div className="flex flex-col items-center justify-center h-full text-zinc-500 space-y-3 py-10">
                 <ShoppingCart className="w-12 h-12 opacity-20" />
                 <p className="font-semibold text-zinc-400 text-sm">{t.emptyList}</p>
                 <p className="text-xs text-center px-6 text-zinc-500 leading-relaxed">{t.emptyListSub}</p>
+                <button
+                  onClick={handleInstantDemoScan}
+                  className="mt-2 px-4 py-2.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 rounded-xl text-emerald-300 text-xs font-bold flex items-center gap-2 transition-all active:scale-95 shadow-sm"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>⚡ Prova Demo Istantanea</span>
+                </button>
               </div>
             ) : (
               <>
@@ -498,11 +622,22 @@ export default function CameraScanner() {
               </button>
             </div>
 
+            {/* Instant Demo Shelf Button */}
+            <div className="mt-2.5 flex justify-center pointer-events-auto">
+              <button
+                onClick={handleInstantDemoScan}
+                className="w-full py-2.5 px-3 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 border border-emerald-800/40 text-emerald-400 font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-sm"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>⚡ Prova Scaffale Demo (Istantaneo)</span>
+              </button>
+            </div>
+
             {/* Dietary filter hint */}
             {activeDietaryCount > 0 && (
               <div
                 onClick={() => setIsSettingsOpen(true)}
-                className="mt-2 flex items-center justify-center gap-1.5 text-xs text-emerald-400 cursor-pointer opacity-80 pointer-events-auto"
+                className="mt-1.5 flex items-center justify-center gap-1.5 text-xs text-emerald-400 cursor-pointer opacity-80 pointer-events-auto"
               >
                 <Sparkles className="w-3 h-3" />
                 <span>{activeDietaryCount} dietary filter{activeDietaryCount > 1 ? 's' : ''} active</span>

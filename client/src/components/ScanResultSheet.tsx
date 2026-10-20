@@ -54,7 +54,15 @@ export function ScanResultSheet({
 
   return (
     <div className="flex flex-col h-full bg-zinc-950 text-zinc-100">
-      
+
+      {/* Notice Banner (Demo / Quota fallback) */}
+      {scan.notice && (
+        <div className="bg-emerald-950/70 border-b border-emerald-800/60 px-4 py-2.5 text-xs text-emerald-200 flex items-center gap-2 shrink-0">
+          <span className="text-sm">⚡</span>
+          <span className="font-medium">{scan.notice}</span>
+        </div>
+      )}
+
       {/* Compact photo + header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-800 bg-zinc-900 shrink-0">
         {/* Thumbnail */}
@@ -134,6 +142,9 @@ export function ScanResultSheet({
                         {prod.label}
                       </h3>
                       <p className="text-xs text-zinc-400 font-medium mt-0.5">{prod.danish_term}</p>
+                      {prod.summary && (
+                        <p className="text-xs text-zinc-300 mt-1 leading-snug">{prod.summary}</p>
+                      )}
                     </div>
 
                     {/* Price */}

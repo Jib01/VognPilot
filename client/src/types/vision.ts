@@ -13,11 +13,15 @@ export interface ProductCard {
   is_plant_based: boolean;
   is_gluten_free?: boolean;
   matches_constraints: boolean;
+  summary?: string | null;
 }
 
 export interface ScanResult {
   detected_products: ProductCard[];
+  items?: any[];
   recommended_product_index?: number | null;
   decision_reason?: string | null;
   is_blurry_or_obscured?: boolean;
+  is_demo_fallback?: boolean;
+  notice?: string | null;
 }
