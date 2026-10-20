@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { HelpCircle, X, Camera, ShoppingCart, Settings as SettingsIcon } from 'lucide-react';
+import { HelpCircle, X, Camera, ShoppingCart, Settings as SettingsIcon, Sparkles } from 'lucide-react';
 
 interface TutorialSlide {
   icon: React.ReactNode;
@@ -9,15 +9,17 @@ interface TutorialSlide {
   description: string;
 }
 
-const slides: TutorialSlide[] = [
+const getSlides = (isIt: boolean): TutorialSlide[] => [
   {
     icon: (
       <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/60 dark:border-emerald-800/60 flex items-center justify-center">
         <Camera className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
       </div>
     ),
-    title: "Point & Scan",
-    description: "Tap \"Take Photo\" and point your camera at any shelf or price tag. Works with 1 item or an entire shelf section.",
+    title: isIt ? "Inquadra e Scatta" : "Point & Scan",
+    description: isIt
+      ? 'Tocca "Scatta Foto" e inquadra un prodotto o lo scaffale. Funziona sia con un singolo cartellino che con più articoli.'
+      : 'Tap "Take Photo" and point your camera at any shelf or price tag. Works with 1 item or an entire shelf section.',
   },
   {
     icon: (
@@ -25,8 +27,10 @@ const slides: TutorialSlide[] = [
         <ShoppingCart className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
       </div>
     ),
-    title: "Get Results Instantly",
-    description: "In 2–3 seconds you'll see translated product names, DKK and EUR prices, Pant deposits, and dietary tags like Organic or Lactose-Free.",
+    title: isIt ? "Risultati Istantanei" : "Get Results Instantly",
+    description: isIt
+      ? "In 2–3 secondi vedrai i nomi tradotti dal danese, i prezzi in corone (DKK) ed Euro, il deposito Pant e i bollini dietetici."
+      : "In 2–3 seconds you'll see translated product names, DKK and EUR prices, Pant deposits, and dietary tags like Organic or Lactose-Free.",
   },
   {
     icon: (
@@ -34,19 +38,25 @@ const slides: TutorialSlide[] = [
         <SettingsIcon className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
       </div>
     ),
-    title: "Track & Personalise",
-    description: "Tap \"Add to Cart\" to track your spend against your budget. In Settings you can set dietary preferences so matching products are highlighted automatically.",
+    title: isIt ? "Budget e Preferenze" : "Track & Personalise",
+    description: isIt
+      ? 'Aggiungi i prodotti al carrello per non sforare il budget. Nelle Impostazioni puoi indicare intolleranze o preferenze bio/vegane.'
+      : 'Tap "Add to Cart" to track your spend against your budget. In Settings you can set dietary preferences so matching products are highlighted automatically.',
   },
 ];
 
 interface TutorialModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onTryDemo?: () => void;
+  language?: 'en' | 'it';
 }
 
-export default function TutorialModal({ isOpen, onClose }: TutorialModalProps) {
+export default function TutorialModal({ isOpen, onClose, onTryDemo, language = 'en' }: TutorialModalProps) {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const isIt = language === 'it';
+  const slides = getSlides(isIt);
 
   useEffect(() => {
     if (!isOpen) setCurrentSlide(0);
@@ -75,10 +85,13 @@ export default function TutorialModal({ isOpen, onClose }: TutorialModalProps) {
       <div className="w-full max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 duration-250 text-zinc-900 dark:text-zinc-100 transition-colors">
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-2">
-          <span className="text-xs font-bold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">How it works</span>
+          <span className="text-xs font-bold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
+            {isIt ? "Come funziona" : "How it works"}
+          </span>
           <button
             onClick={onClose}
             className="p-1.5 rounded-full bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 dark:hover:text-white transition-colors active:scale-95"
+            aria-label="Close"
           >
             <X className="w-4 h-4" />
           </button>
@@ -111,6 +124,7 @@ export default function TutorialModal({ isOpen, onClose }: TutorialModalProps) {
                 className={`h-1.5 rounded-full transition-all duration-300 ${
                   i === currentSlide ? 'w-6 bg-emerald-500' : 'w-1.5 bg-zinc-300 dark:bg-zinc-700'
                 }`}
+                aria-label={`Slide ${i + 1}`}
               />
             ))}
           </div>
@@ -122,7 +136,7 @@ export default function TutorialModal({ isOpen, onClose }: TutorialModalProps) {
                 onClick={onClose}
                 className="flex-1 py-3 rounded-xl text-sm font-semibold text-zinc-700 dark:text-zinc-400 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 active:scale-95 transition-all"
               >
-                Skip
+                {isIt ? "Salta" : "Skip"}
               </button>
             )}
             <button
@@ -132,9 +146,25 @@ export default function TutorialModal({ isOpen, onClose }: TutorialModalProps) {
               }}
               className="flex-1 py-3 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-500 active:scale-95 transition-all shadow-md"
             >
-              {isLast ? "Got it" : "Next →"}
+              {isLast ? (isIt ? "Ho capito" : "Got it") : (isIt ? "Avanti →" : "Next →")}
             </button>
           </div>
+
+          {/* Try Demo Shelf - inside Help under Skip/Next */}
+          {onTryDemo && (
+            <div className="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800/80">
+              <button
+                onClick={() => {
+                  onClose();
+                  onTryDemo();
+                }}
+                className="w-full py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 dark:bg-emerald-950/80 dark:hover:bg-emerald-900 dark:border-emerald-700/60 dark:text-emerald-300 font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-xs"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span>{isIt ? "⚡ Prova Scaffale Demo" : "⚡ Try Demo Shelf"}</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

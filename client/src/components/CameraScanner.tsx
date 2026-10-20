@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from 'react';
-import { Camera, Upload, AlertTriangle, CheckCircle2, ShoppingCart, Settings, Sparkles, Circle, Plus, Minus, Trash2, Target, Pencil, X, RefreshCw } from 'lucide-react';
+import { Camera, Upload, AlertTriangle, CheckCircle2, ShoppingCart, Settings, Sparkles, Circle, Plus, Minus, Trash2, Target, Pencil, X, RefreshCw, HelpCircle } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ScanResult, ProductCard } from '../types/vision';
 import { db } from '../lib/db';
@@ -606,38 +606,27 @@ export default function CameraScanner() {
                 style={{ width: `${budgetPercent}%` }}
               />
             </div>
-
-            {/* Quick preset chips */}
-            <div className="flex gap-2 mt-2">
-              {[100, 200, 300, 500].map(p => (
-                <button
-                  key={p}
-                  onClick={() => { setBudgetTarget(p); localStorage.setItem('vognpilot_budget', p.toString()); }}
-                  className={`text-[10px] font-bold px-2.5 py-1 rounded-full border transition-all active:scale-95 ${
-                    budgetTarget === p
-                      ? 'border-emerald-500 bg-emerald-50 text-emerald-800 dark:border-emerald-500 dark:bg-emerald-950/60 dark:text-emerald-300'
-                      : 'border-zinc-200 bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-700'
-                  }`}
-                >
-                  {p} kr
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* Cart Items (scrollable) */}
           <div className="flex-1 overflow-y-auto hide-scrollbar px-3 py-3 space-y-2 pb-36">
             {cartItems.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-zinc-500 space-y-3 py-10">
-                <ShoppingCart className="w-12 h-12 opacity-25" />
-                <p className="font-semibold text-zinc-700 dark:text-zinc-300 text-sm">{t.emptyList}</p>
-                <p className="text-xs text-center px-6 text-zinc-500 dark:text-zinc-400 leading-relaxed">{t.emptyListSub}</p>
+              <div className="flex flex-col items-center justify-center h-full text-zinc-500 space-y-3 py-12">
                 <button
-                  onClick={handleInstantDemoScan}
-                  className="mt-2 px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 dark:bg-emerald-950/80 dark:hover:bg-emerald-900 dark:border-emerald-700/60 dark:text-emerald-300 rounded-xl text-xs font-bold flex items-center gap-2 transition-all active:scale-95 shadow-xs"
+                  onClick={() => setIsTutorialOpen(true)}
+                  className="w-16 h-16 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 flex items-center justify-center text-zinc-500 hover:text-emerald-600 dark:text-zinc-400 dark:hover:text-emerald-400 transition-all active:scale-95 shadow-xs group"
+                  aria-label={t.howItWorks}
                 >
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span>{t.tryDemoShelf}</span>
+                  <HelpCircle className="w-8 h-8 group-hover:scale-110 transition-transform" />
+                </button>
+                <p className="font-semibold text-zinc-800 dark:text-zinc-200 text-sm">{t.emptyList}</p>
+                <p className="text-xs text-center px-6 text-zinc-500 dark:text-zinc-400 leading-relaxed max-w-xs">{t.emptyListSub}</p>
+                <button
+                  onClick={() => setIsTutorialOpen(true)}
+                  className="mt-1 px-4 py-2 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 text-zinc-700 dark:bg-zinc-850 dark:hover:bg-zinc-800 dark:border-zinc-700/80 dark:text-zinc-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95"
+                >
+                  <HelpCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>{t.howItWorks}</span>
                 </button>
               </div>
             ) : (
@@ -731,22 +720,11 @@ export default function CameraScanner() {
               </button>
             </div>
 
-            {/* Instant Demo Shelf Button */}
-            <div className="mt-2.5 flex justify-center pointer-events-auto">
-              <button
-                onClick={handleInstantDemoScan}
-                className="w-full py-2.5 px-3 rounded-xl bg-white/90 hover:bg-zinc-100 border border-emerald-300 text-emerald-700 dark:bg-zinc-900/90 dark:hover:bg-zinc-800 dark:border-emerald-800/40 dark:text-emerald-400 font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-xs"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                <span>{t.tryDemoShelfInstant}</span>
-              </button>
-            </div>
-
             {/* Dietary filter hint */}
             {activeDietaryCount > 0 ? (
               <div
                 onClick={() => setIsSettingsOpen(true)}
-                className="mt-1.5 flex items-center justify-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 cursor-pointer opacity-90 pointer-events-auto font-medium"
+                className="mt-2 flex items-center justify-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 cursor-pointer opacity-90 pointer-events-auto font-medium"
               >
                 <Sparkles className="w-3 h-3" />
                 <span>{activeDietaryCount} {activeDietaryCount > 1 ? t.activeFiltersPlural : t.activeFilters}</span>
@@ -893,7 +871,12 @@ export default function CameraScanner() {
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} preferences={preferences} onUpdatePreferences={setPreferences} />
 
       {/* Tutorial Modal */}
-      <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
+      <TutorialModal
+        isOpen={isTutorialOpen}
+        onClose={() => setIsTutorialOpen(false)}
+        onTryDemo={handleInstantDemoScan}
+        language={preferences.language}
+      />
     </div>
   );
 }
