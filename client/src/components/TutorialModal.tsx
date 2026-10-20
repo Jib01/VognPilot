@@ -12,17 +12,17 @@ interface TutorialSlide {
 const slides: TutorialSlide[] = [
   {
     icon: (
-      <div className="w-16 h-16 rounded-2xl bg-emerald-950/60 border border-emerald-800/60 flex items-center justify-center">
-        <Camera className="w-8 h-8 text-emerald-400" />
+      <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/60 dark:border-emerald-800/60 flex items-center justify-center">
+        <Camera className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
       </div>
     ),
     title: "Point & Scan",
-    description: "Tap \"Scan Product\" and point your camera at any shelf or price tag. Works with 1 item or an entire shelf section.",
+    description: "Tap \"Take Photo\" and point your camera at any shelf or price tag. Works with 1 item or an entire shelf section.",
   },
   {
     icon: (
-      <div className="w-16 h-16 rounded-2xl bg-emerald-950/60 border border-emerald-800/60 flex items-center justify-center">
-        <ShoppingCart className="w-8 h-8 text-emerald-400" />
+      <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/60 dark:border-emerald-800/60 flex items-center justify-center">
+        <ShoppingCart className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
       </div>
     ),
     title: "Get Results Instantly",
@@ -30,8 +30,8 @@ const slides: TutorialSlide[] = [
   },
   {
     icon: (
-      <div className="w-16 h-16 rounded-2xl bg-emerald-950/60 border border-emerald-800/60 flex items-center justify-center">
-        <SettingsIcon className="w-8 h-8 text-emerald-400" />
+      <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/60 dark:border-emerald-800/60 flex items-center justify-center">
+        <SettingsIcon className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
       </div>
     ),
     title: "Track & Personalise",
@@ -71,14 +71,14 @@ export default function TutorialModal({ isOpen, onClose }: TutorialModalProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 duration-250">
+    <div className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="w-full max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 duration-250 text-zinc-900 dark:text-zinc-100 transition-colors">
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-2">
-          <span className="text-xs font-bold uppercase tracking-widest text-zinc-400">How it works</span>
+          <span className="text-xs font-bold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">How it works</span>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full bg-zinc-800 text-zinc-400 hover:text-white transition-colors active:scale-95"
+            className="p-1.5 rounded-full bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 dark:hover:text-white transition-colors active:scale-95"
           >
             <X className="w-4 h-4" />
           </button>
@@ -93,10 +93,10 @@ export default function TutorialModal({ isOpen, onClose }: TutorialModalProps) {
           <div className="flex flex-col items-center text-center min-h-[200px] justify-center gap-5">
             {slides[currentSlide].icon}
             <div>
-              <h3 className="text-xl font-extrabold text-zinc-100 tracking-tight mb-2">
+              <h3 className="text-xl font-extrabold text-zinc-900 dark:text-zinc-100 tracking-tight mb-2">
                 {slides[currentSlide].title}
               </h3>
-              <p className="text-sm text-zinc-400 leading-relaxed max-w-xs">
+              <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed max-w-xs">
                 {slides[currentSlide].description}
               </p>
             </div>
@@ -109,7 +109,7 @@ export default function TutorialModal({ isOpen, onClose }: TutorialModalProps) {
                 key={i}
                 onClick={() => setCurrentSlide(i)}
                 className={`h-1.5 rounded-full transition-all duration-300 ${
-                  i === currentSlide ? 'w-6 bg-emerald-500' : 'w-1.5 bg-zinc-700'
+                  i === currentSlide ? 'w-6 bg-emerald-500' : 'w-1.5 bg-zinc-300 dark:bg-zinc-700'
                 }`}
               />
             ))}
@@ -120,7 +120,7 @@ export default function TutorialModal({ isOpen, onClose }: TutorialModalProps) {
             {!isLast && (
               <button
                 onClick={onClose}
-                className="flex-1 py-3 rounded-xl text-sm font-semibold text-zinc-400 bg-zinc-800 border border-zinc-700 active:scale-95 transition-all"
+                className="flex-1 py-3 rounded-xl text-sm font-semibold text-zinc-700 dark:text-zinc-400 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 active:scale-95 transition-all"
               >
                 Skip
               </button>
@@ -146,7 +146,7 @@ export function HelpButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="p-2 text-zinc-400 hover:text-zinc-200 bg-zinc-800/80 hover:bg-zinc-800 rounded-xl border border-zinc-700/80 transition-all active:scale-95 flex-shrink-0"
+      className="p-2 text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800/80 dark:hover:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700/80 transition-all active:scale-95 flex-shrink-0"
       aria-label="How it works"
     >
       <HelpCircle className="w-4 h-4" />

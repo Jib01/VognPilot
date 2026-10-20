@@ -5,85 +5,34 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
-const PROMPT = `Analyze this Danish supermarket image. Identify AT MOST the 6 clearest, most prominent grocery products.
-Return ONLY valid JSON with this exact schema:
+function buildPrompt(targetLang: string) {
+  return `Analyze this Danish grocery image.
+CRITICAL SPEED RULE: Focus ONLY on the 1 to 4 largest, clearest products in the center/foreground. Completely ignore small background items or crowded distant shelves.
+TRANSLATION RULE: Translate product names and summaries into ${targetLang}.
+
+Return ONLY valid JSON matching this exact schema:
 {
   "items": [
     {
       "id": "1",
-      "danish_name": "Product name on label in Danish",
-      "english_name": "English translation + size (e.g. Organic Semi-Skimmed Milk 1L)",
+      "danish_name": "Original Danish name on label",
+      "english_name": "Clear translation in ${targetLang} + weight/volume (e.g. Latte Parzialmente Scremato Bio 1L / Organic Semi-Skimmed Milk 1L)",
       "price_dkk": 14.5,
       "pant_dkk": 0,
-      "category": "Dairy / Drinks / Snacks / Bakery / Other",
+      "category": "Dairy / Drinks / Meat / Snacks / Bakery / Produce / Other",
       "is_organic": false,
       "is_lactose_free": false,
       "is_vegan": false,
       "is_gluten_free": false,
-      "summary": "Short 8-word note on ingredients or dietary traits"
+      "summary": "Max 10 words in ${targetLang} describing the product and key dietary info"
     }
   ]
 }
 Rules:
-- Maximum 6 items total.
-- Do NOT output bounding boxes.
-- If a price tag is unclear, estimate typical Danish price in DKK.
-- Add pant_dkk (1, 1.5, or 3) only for cans/bottles.`;
-
-const DEMO_ITEMS = [
-  {
-    id: "1",
-    danish_name: "Arla Økologisk Letmælk 1L",
-    english_name: "Arla Organic Semi-Skimmed Milk 1L",
-    price_dkk: 14.50,
-    pant_dkk: 0,
-    category: "Dairy",
-    is_organic: true,
-    is_lactose_free: false,
-    is_vegan: false,
-    is_gluten_free: true,
-    summary: "Danish organic semi-skimmed fresh milk",
-  },
-  {
-    id: "2",
-    danish_name: "Faxe Kondi 33cl",
-    english_name: "Faxe Kondi Lemon/Lime Soda 330ml",
-    price_dkk: 8.50,
-    pant_dkk: 1.0,
-    category: "Drinks",
-    is_organic: false,
-    is_lactose_free: true,
-    is_vegan: true,
-    is_gluten_free: true,
-    summary: "Classic Danish lemon soda with Pant A deposit",
-  },
-  {
-    id: "3",
-    danish_name: "Pågen Gifflar Kanel 260g",
-    english_name: "Pågen Cinnamon Swirls 260g",
-    price_dkk: 22.00,
-    pant_dkk: 0,
-    category: "Bakery",
-    is_organic: false,
-    is_lactose_free: false,
-    is_vegan: false,
-    is_gluten_free: false,
-    summary: "Nordic cinnamon mini pastry rolls",
-  },
-  {
-    id: "4",
-    danish_name: "Lurpak Smørbar 200g",
-    english_name: "Lurpak Salted Spreadable Butter 200g",
-    price_dkk: 26.95,
-    pant_dkk: 0,
-    category: "Dairy",
-    is_organic: false,
-    is_lactose_free: false,
-    is_vegan: false,
-    is_gluten_free: true,
-    summary: "Classic salted Danish churned spreadable butter",
-  },
-];
+- Maximum 4 items.
+- No bounding boxes.
+- Set pant_dkk to 1, 1.5, or 3 ONLY if it is a returnable bottle/can with Danish Pant, otherwise 0.`;
+}
 
 function mapItemToProduct(item: any, preferences: any): ProductCard {
   const dietary = preferences?.dietary_lifestyle || [];
@@ -93,12 +42,14 @@ function mapItemToProduct(item: any, preferences: any): ProductCard {
   if (dietary.includes('lactose_free') && !item.is_lactose_free) matches = false;
   if (dietary.includes('gluten_free') && !item.is_gluten_free) matches = false;
 
+  const pant = Number(item.pant_dkk ?? item.pant_fee_dkk ?? 0);
+
   return {
-    label: item.english_name || item.label || item.danish_name || 'Danish Product',
+    label: item.english_name || item.danish_name || item.label || 'Danish Product',
     danish_term: item.danish_name || item.danish_term || item.english_name || '',
     package_price_dkk: Number(item.price_dkk ?? item.package_price_dkk ?? 0),
     unit_price_dkk: item.unit_price_dkk != null ? Number(item.unit_price_dkk) : null,
-    pant_fee_dkk: item.pant_dkk != null ? Number(item.pant_dkk) : (item.pant_fee_dkk != null ? Number(item.pant_fee_dkk) : null),
+    pant_fee_dkk: pant > 0 ? pant : null,
     multipack_offer: item.multipack_offer || null,
     fat_percentage: item.fat_percentage != null ? Number(item.fat_percentage) : null,
     sugar_g_per_100g: item.sugar_g_per_100g != null ? Number(item.sugar_g_per_100g) : null,
@@ -112,21 +63,6 @@ function mapItemToProduct(item: any, preferences: any): ProductCard {
   };
 }
 
-function buildDemoScanResponse(notice: string, preferences: any): ScanResult {
-  const detected = DEMO_ITEMS.map(i => mapItemToProduct(i, preferences));
-  const recommendedIdx = detected.findIndex(p => p.matches_constraints);
-
-  return {
-    is_demo_fallback: true,
-    notice,
-    items: DEMO_ITEMS,
-    detected_products: detected,
-    recommended_product_index: recommendedIdx >= 0 ? recommendedIdx : 0,
-    decision_reason: "Scaffale dimostrativo danese caricato con successo.",
-    is_blurry_or_obscured: false,
-  };
-}
-
 export async function POST(request: NextRequest) {
   const rawApiKeys = (process.env.GEMINI_API_KEY || '').trim();
   const apiKeys = rawApiKeys
@@ -137,6 +73,7 @@ export async function POST(request: NextRequest) {
   let preferences: any = {};
   let base64 = '';
   let mimeType = 'image/jpeg';
+  let language = 'en';
 
   try {
     const contentType = request.headers.get('content-type') || '';
@@ -149,10 +86,12 @@ export async function POST(request: NextRequest) {
       }
       mimeType = body.mimeType || 'image/jpeg';
       preferences = body.preferences || {};
+      language = body.language || preferences?.language || 'en';
     } else {
       const formData = await request.formData();
       const file = formData.get('file') as File | null;
       const preferencesStr = formData.get('preferences') as string | null;
+      const langStr = formData.get('language') as string | null;
 
       if (file) {
         const bytes = await file.arrayBuffer();
@@ -160,34 +99,59 @@ export async function POST(request: NextRequest) {
         mimeType = (file.type && file.type.startsWith('image/')) ? file.type : 'image/jpeg';
       }
       preferences = preferencesStr ? JSON.parse(preferencesStr) : {};
+      language = langStr || preferences?.language || 'en';
     }
   } catch (parseErr) {
     console.error('[Scan Route] Request body parse failed:', parseErr);
-    return NextResponse.json({ error: 'Payload richiesta non valido' }, { status: 400 });
+    return NextResponse.json(
+      { error_code: 'BAD_REQUEST', message: 'Payload richiesta non valido' },
+      { status: 400 }
+    );
   }
 
-  // If no API key configured, gracefully fall back to demo items
+  // Validate API Key presence
   if (apiKeys.length === 0) {
-    console.warn('[Scan Route] No GEMINI_API_KEY configured. Returning demo shelf.');
+    console.error('[Scan Route] No GEMINI_API_KEY configured in environment.');
     return NextResponse.json(
-      buildDemoScanResponse("Chiave Gemini non configurata: caricati dati demo dello scaffale danese", preferences),
-      { status: 200 }
+      {
+        error_code: 'AUTH_ERROR',
+        message: language === 'it'
+          ? 'Chiave API Gemini non valida o mancante nelle variabili d\'ambiente.'
+          : 'Gemini API key is missing or invalid in environment variables.',
+      },
+      { status: 401 }
     );
   }
 
   if (!base64 || base64.length === 0) {
-    return NextResponse.json({ error: 'Nessuna immagine fornita' }, { status: 400 });
+    return NextResponse.json(
+      {
+        error_code: 'NO_IMAGE',
+        message: language === 'it' ? 'Nessuna immagine fornita' : 'No image provided',
+      },
+      { status: 400 }
+    );
   }
 
-  // Official models in order of latency and quota efficiency
-  const MODELS = ['gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.6-flash'];
+  const targetLang = language === 'it' ? 'Italian' : 'English';
+  const prompt = buildPrompt(targetLang);
+
+  // Time budget: Max 14 seconds total on server (7.5s attempt 1 + 6.5s attempt 2)
+  const ATTEMPTS = [
+    { model: 'gemini-3.5-flash-lite', timeoutMs: 7500 },
+    { model: 'gemini-3.6-flash', timeoutMs: 6500 },
+  ];
+
+  let isQuotaExceeded = false;
+  let isTimeout = false;
+  let isAuthError = false;
   let lastErrorMsg = '';
-  let isRateLimited = false;
 
   for (const apiKey of apiKeys) {
-    for (const model of MODELS) {
+    for (const attempt of ATTEMPTS) {
+      const { model, timeoutMs } = attempt;
       try {
-        console.log(`[Scan Route] Calling model ${model}...`);
+        console.log(`[Scan Route] Calling ${model} (timeout ${timeoutMs}ms)...`);
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
         const res = await fetch(url, {
@@ -197,23 +161,33 @@ export async function POST(request: NextRequest) {
             contents: [
               {
                 parts: [
-                  { text: PROMPT },
-                  { inlineData: { mimeType, data: base64 } }
-                ]
-              }
+                  { text: prompt },
+                  { inlineData: { mimeType, data: base64 } },
+                ],
+              },
             ],
             generationConfig: {
               temperature: 0.1,
               maxOutputTokens: 800,
-              responseMimeType: 'application/json'
-            }
+              responseMimeType: 'application/json',
+            },
           }),
-          signal: AbortSignal.timeout(12000), // Max 12 seconds per call
+          signal: AbortSignal.timeout(timeoutMs),
         });
 
         if (res.status === 429) {
-          isRateLimited = true;
-          console.warn(`[Scan Route] ${model} rate limited (429).`);
+          isQuotaExceeded = true;
+          console.warn(`[Scan Route] ${model} 429 quota reached.`);
+          continue;
+        }
+
+        if (res.status === 400 || res.status === 401 || res.status === 403) {
+          const errText = await res.text();
+          console.error(`[Scan Route] ${model} auth error (${res.status}):`, errText);
+          if (errText.includes('API_KEY') || errText.includes('identity') || errText.includes('unregistered')) {
+            isAuthError = true;
+          }
+          lastErrorMsg = errText.slice(0, 150);
           continue;
         }
 
@@ -238,36 +212,92 @@ export async function POST(request: NextRequest) {
           ? parsed.items
           : (Array.isArray(parsed?.detected_products) ? parsed.detected_products : []);
 
-        const detectedProducts: ProductCard[] = rawItems.slice(0, 6).map((item: any) =>
+        // If no products were found in image: return 422
+        if (rawItems.length === 0) {
+          console.log('[Scan Route] 0 items found in image. Returning 422 NO_PRODUCTS_FOUND.');
+          return NextResponse.json(
+            {
+              error_code: 'NO_PRODUCTS_FOUND',
+              message: language === 'it'
+                ? 'Nessun prodotto o cartellino prezzo leggibile nell\'immagine.'
+                : 'No readable products or price tags found in the image.',
+            },
+            { status: 422 }
+          );
+        }
+
+        // Limit strictly to 4 items max
+        const detectedProducts: ProductCard[] = rawItems.slice(0, 4).map((item: any) =>
           mapItemToProduct(item, preferences)
         );
 
         const recommendedIdx = detectedProducts.findIndex(p => p.matches_constraints);
 
         const finalResult: ScanResult = {
-          items: rawItems,
+          items: rawItems.slice(0, 4),
           detected_products: detectedProducts,
-          recommended_product_index: recommendedIdx >= 0 ? recommendedIdx : (detectedProducts.length > 0 ? 0 : null),
-          decision_reason: detectedProducts.length > 0 ? `Trovati ${detectedProducts.length} prodotti sullo scaffale.` : "Nessun prodotto chiaro identificato.",
-          is_blurry_or_obscured: detectedProducts.length === 0,
+          recommended_product_index: recommendedIdx >= 0 ? recommendedIdx : 0,
+          decision_reason: language === 'it'
+            ? `Rilevati ${detectedProducts.length} prodotti in primo piano.`
+            : `Detected ${detectedProducts.length} prominent products in foreground.`,
+          is_blurry_or_obscured: false,
         };
 
         return NextResponse.json(finalResult, { status: 200 });
       } catch (err: any) {
-        lastErrorMsg = err?.message || String(err);
-        console.warn(`[Scan Route] ${model} error:`, lastErrorMsg);
+        if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
+          isTimeout = true;
+          console.warn(`[Scan Route] ${model} timed out after ${timeoutMs}ms`);
+        } else {
+          lastErrorMsg = err?.message || String(err);
+          console.warn(`[Scan Route] ${model} error:`, lastErrorMsg);
+        }
       }
     }
   }
 
-  // Graceful fallback if quota exceeded or all models timed out
-  console.warn('[Scan Route] All model attempts failed or timed out. Serving demo fallback.');
-  const notice = isRateLimited
-    ? "Quota API gratuita in pausa: caricati dati dimostrativi dello scaffale danese"
-    : "Connessione API rallentata: caricati dati dimostrativi dello scaffale danese";
+  // Handle specific structured failure modes without hiding behind mock data
+  if (isQuotaExceeded) {
+    return NextResponse.json(
+      {
+        error_code: 'QUOTA_EXCEEDED',
+        message: language === 'it'
+          ? 'Limite di richieste gratuite Gemini API raggiunto. Riprova tra 1 minuto.'
+          : 'Gemini free API quota reached for this minute. Please retry in 1 minute.',
+      },
+      { status: 429 }
+    );
+  }
+
+  if (isTimeout) {
+    return NextResponse.json(
+      {
+        error_code: 'TIMEOUT_TOO_DENSE',
+        message: language === 'it'
+          ? 'L\'immagine contiene troppi elementi o richiede troppo tempo. Inquadra da più vicino solo 1-3 prodotti.'
+          : 'The image contains too many items or took too long. Move closer and frame 1-3 products.',
+      },
+      { status: 408 }
+    );
+  }
+
+  if (isAuthError) {
+    return NextResponse.json(
+      {
+        error_code: 'AUTH_ERROR',
+        message: language === 'it'
+          ? 'Chiave API Gemini non valida o scaduta nelle variabili d\'ambiente.'
+          : 'Gemini API key is invalid or expired in environment variables.',
+      },
+      { status: 401 }
+    );
+  }
 
   return NextResponse.json(
-    buildDemoScanResponse(notice, preferences),
-    { status: 200 }
+    {
+      error_code: 'SCAN_FAILED',
+      message: lastErrorMsg || (language === 'it' ? 'Errore durante l\'analisi dello scaffale.' : 'Error during shelf scan.'),
+    },
+    { status: 500 }
   );
 }

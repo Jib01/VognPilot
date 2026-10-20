@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from 'react';
-import { Camera, Upload, AlertTriangle, CheckCircle2, ShoppingCart, Settings, Sparkles, Circle, Plus, Minus, Trash2, Target, Pencil, X } from 'lucide-react';
+import { Camera, Upload, AlertTriangle, CheckCircle2, ShoppingCart, Settings, Sparkles, Circle, Plus, Minus, Trash2, Target, Pencil, X, RefreshCw } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ScanResult, ProductCard } from '../types/vision';
 import { db } from '../lib/db';
@@ -9,7 +9,7 @@ import { useSyncEngine } from '../hooks/useSync';
 import { ScanResultSheet } from './ScanResultSheet';
 import SettingsModal, { UserPreferences } from './SettingsModal';
 import TutorialModal, { HelpButton } from './TutorialModal';
-import { getTranslation } from '../lib/translations';
+import { Language, getTranslation } from '../lib/translations';
 
 const DEFAULT_PREFERENCES: UserPreferences = {
   theme: "system",
@@ -26,15 +26,23 @@ const DEFAULT_PREFERENCES: UserPreferences = {
 
 type AppView = 'dashboard' | 'scanning' | 'results';
 
+interface ErrorModalState {
+  code: 'TIMEOUT_TOO_DENSE' | 'NO_PRODUCTS_FOUND' | 'QUOTA_EXCEEDED' | 'AUTH_ERROR' | 'NETWORK_ERROR' | 'SERVER_ERROR';
+  title: string;
+  message: string;
+}
+
 export default function CameraScanner() {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
   const [view, setView] = useState<AppView>('dashboard');
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const [lastBase64, setLastBase64] = useState<string | null>(null);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [loadingStep, setLoadingStep] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [isSlowScan, setIsSlowScan] = useState(false);
+  const [errorModal, setErrorModal] = useState<ErrorModalState | null>(null);
 
   // Modals
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -87,28 +95,50 @@ export default function CameraScanner() {
 
   const t = getTranslation(preferences.language);
 
-  // Apply theme
+  // Apply theme dynamically to <html> element
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const theme = preferences.theme;
-      if (theme === 'dark') document.documentElement.classList.add('dark');
-      else if (theme === 'light') document.documentElement.classList.remove('dark');
-      else {
-        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const applyTheme = () => {
+        const theme = preferences.theme;
+        let isDark = false;
+        if (theme === 'dark') isDark = true;
+        else if (theme === 'light') isDark = false;
+        else isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         document.documentElement.classList.toggle('dark', isDark);
+      };
+
+      applyTheme();
+
+      if (preferences.theme === 'system') {
+        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        const listener = () => applyTheme();
+        mediaQuery.addEventListener('change', listener);
+        return () => mediaQuery.removeEventListener('change', listener);
       }
     }
   }, [preferences.theme]);
 
   useSyncEngine();
 
-  // Loading step transitions
+  // Loading step transitions & slow scan warning (> 4s)
   useEffect(() => {
-    if (view !== 'scanning') { setLoadingStep(0); return; }
+    if (view !== 'scanning') {
+      setLoadingStep(0);
+      setIsSlowScan(false);
+      return;
+    }
     setLoadingStep(0);
-    const t1 = setTimeout(() => setLoadingStep(1), 1800);
-    const t2 = setTimeout(() => setLoadingStep(2), 3800);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
+    setIsSlowScan(false);
+
+    const t1 = setTimeout(() => setLoadingStep(1), 1600);
+    const t2 = setTimeout(() => setLoadingStep(2), 3200);
+    const tSlow = setTimeout(() => setIsSlowScan(true), 4000);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(tSlow);
+    };
   }, [view]);
 
   // Compress image to max 768px with 0.68 JPEG quality (~45-60 KB)
@@ -120,7 +150,7 @@ export default function CameraScanner() {
         URL.revokeObjectURL(url);
         const canvas = document.createElement('canvas');
         let { width, height } = img;
-        const max = 768; // Max 768px for lightning speed and minimal token consumption
+        const max = 768; // 768px for fast mobile upload and low token usage
         if (width > height && width > max) { height = (height * max) / width; width = max; }
         else if (height > max) { width = (width * max) / height; height = max; }
         canvas.width = Math.round(width);
@@ -143,31 +173,28 @@ export default function CameraScanner() {
       img.src = url;
     });
 
-  const scanImage = async (file: Blob) => {
+  const executeScan = async (base64: string) => {
     setView('scanning');
-    setError(null);
+    setErrorModal(null);
     setScanResult(null);
 
-    try {
-      const base64DataUrl = await compressImage(file);
-      const base64 = base64DataUrl.split(',')[1] || base64DataUrl;
-
-      // Client-side cache check (sessionStorage)
-      const cacheKey = `vogn_scan_${base64.length}_${base64.slice(0, 30)}_${base64.slice(-30)}`;
-      if (typeof window !== 'undefined') {
-        const cached = sessionStorage.getItem(cacheKey);
-        if (cached) {
-          try {
-            const parsed: ScanResult = JSON.parse(cached);
-            setScanResult(parsed);
-            setView('results');
-            return;
-          } catch {
-            // ignore cache parse failure
-          }
+    // Client-side cache check (sessionStorage)
+    const cacheKey = `vogn_scan_${preferences.language}_${base64.length}_${base64.slice(0, 30)}_${base64.slice(-30)}`;
+    if (typeof window !== 'undefined') {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        try {
+          const parsed: ScanResult = JSON.parse(cached);
+          setScanResult(parsed);
+          setView('results');
+          return;
+        } catch {
+          // ignore cache read failure
         }
       }
+    }
 
+    try {
       const dietaryList: string[] = [];
       if (preferences.dietary.vegetarian) dietaryList.push('vegetarian');
       if (preferences.dietary.vegan) dietaryList.push('vegan');
@@ -175,7 +202,7 @@ export default function CameraScanner() {
       if (preferences.dietary.lactoseFree) dietaryList.push('lactose_free');
       if (preferences.dietary.glutenFree) dietaryList.push('gluten_free');
 
-      // Call local Vercel API Route with 16s frontend timeout
+      // Call local Vercel API Route with 18s frontend timeout
       const res = await fetch('/api/v1/scan', {
         method: 'POST',
         headers: {
@@ -184,18 +211,27 @@ export default function CameraScanner() {
         body: JSON.stringify({
           image: base64,
           mimeType: 'image/jpeg',
+          language: preferences.language,
           preferences: {
             dietary_lifestyle: dietaryList,
             currency: { primary: preferences.currency, fixed_rate: 7.46 },
           },
         }),
-        signal: AbortSignal.timeout(16000),
+        signal: AbortSignal.timeout(18000), // 18 seconds frontend timeout
       });
 
       if (!res.ok) {
         const errorJson = await res.json().catch(() => null);
-        const errorMsg = errorJson?.error || `Server error: ${res.status}`;
-        throw new Error(errorMsg);
+        const code = errorJson?.error_code || (
+          res.status === 429 ? 'QUOTA_EXCEEDED' :
+          res.status === 408 ? 'TIMEOUT_TOO_DENSE' :
+          res.status === 422 ? 'NO_PRODUCTS_FOUND' :
+          res.status === 401 ? 'AUTH_ERROR' : 'SERVER_ERROR'
+        );
+
+        handleStructuredError(code, errorJson?.message);
+        setView('dashboard');
+        return;
       }
 
       const data: ScanResult = await res.json();
@@ -205,36 +241,94 @@ export default function CameraScanner() {
         try {
           sessionStorage.setItem(cacheKey, JSON.stringify(data));
         } catch {
-          // sessionStorage quota exceeded, silent ignore
+          // ignore storage quota full
         }
       }
 
       setScanResult(data);
       setView('results');
-    } catch (err: unknown) {
+    } catch (err: any) {
       console.error('[Scanner]', err);
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(msg || t.tryCloser);
+      const isAbort = err?.name === 'TimeoutError' || err?.name === 'AbortError';
+      if (isAbort) {
+        handleStructuredError('TIMEOUT_TOO_DENSE');
+      } else {
+        handleStructuredError('NETWORK_ERROR', err?.message);
+      }
       setView('dashboard');
     }
   };
 
-  // Instant demo scan (zero API calls, 250ms response)
+  const handleStructuredError = (code: string, serverMsg?: string) => {
+    switch (code) {
+      case 'TIMEOUT_TOO_DENSE':
+        setErrorModal({
+          code: 'TIMEOUT_TOO_DENSE',
+          title: t.errorTimeoutTitle,
+          message: t.errorTimeoutMsg,
+        });
+        break;
+      case 'NO_PRODUCTS_FOUND':
+        setErrorModal({
+          code: 'NO_PRODUCTS_FOUND',
+          title: t.errorNoProductsTitle,
+          message: t.errorNoProductsMsg,
+        });
+        break;
+      case 'QUOTA_EXCEEDED':
+        setErrorModal({
+          code: 'QUOTA_EXCEEDED',
+          title: t.errorQuotaTitle,
+          message: t.errorQuotaMsg,
+        });
+        break;
+      case 'AUTH_ERROR':
+        setErrorModal({
+          code: 'AUTH_ERROR',
+          title: t.errorAuthTitle,
+          message: serverMsg || t.errorAuthMsg,
+        });
+        break;
+      default:
+        setErrorModal({
+          code: 'NETWORK_ERROR',
+          title: t.errorNetworkTitle,
+          message: serverMsg || t.errorNetworkMsg,
+        });
+    }
+  };
+
+  const scanImage = async (file: Blob) => {
+    try {
+      const base64DataUrl = await compressImage(file);
+      const base64 = base64DataUrl.split(',')[1] || base64DataUrl;
+      setLastBase64(base64);
+      executeScan(base64);
+    } catch (err) {
+      console.error('[Scanner] Image preparation failed:', err);
+      handleStructuredError('NETWORK_ERROR', 'Impossibile leggere il file immagine.');
+    }
+  };
+
+  // Instant demo scan (Zero API calls, pure client-side demonstration)
   const handleInstantDemoScan = () => {
     setView('scanning');
-    setError(null);
+    setErrorModal(null);
     setImageUri('/icon-512.svg');
 
     setTimeout(() => {
+      const isIt = preferences.language === 'it';
       const demoResult: ScanResult = {
         is_demo_fallback: true,
-        notice: "Scaffale dimostrativo danese caricato con successo (Zero consumo API)",
-        decision_reason: "4 prodotti tipici di un supermercato danese con prezzi in DKK/EUR, Pant e tag dietetici.",
+        notice: t.demoShelfNotice,
+        decision_reason: isIt
+          ? "4 prodotti tipici di un supermercato danese con prezzi in DKK/EUR, Pant e note."
+          : "4 typical Danish supermarket products with DKK/EUR prices, Pant deposits, and notes.",
         is_blurry_or_obscured: false,
         recommended_product_index: 0,
         detected_products: [
           {
-            label: "Arla Organic Semi-Skimmed Milk 1L",
+            label: isIt ? "Arla Latte Parzialmente Scremato Bio 1L" : "Arla Organic Semi-Skimmed Milk 1L",
             danish_term: "Arla Økologisk Letmælk 1L",
             package_price_dkk: 14.50,
             unit_price_dkk: 14.50,
@@ -248,10 +342,10 @@ export default function CameraScanner() {
             is_plant_based: false,
             is_gluten_free: true,
             matches_constraints: true,
-            summary: "Latte fresco biologico danese parzialmente scremato, ricco di calcio",
+            summary: isIt ? "Latte fresco biologico danese ricco di calcio" : "Danish fresh organic semi-skimmed milk",
           },
           {
-            label: "Faxe Kondi Lemon/Lime Soda 330ml",
+            label: isIt ? "Faxe Kondi Soda Limone/Lime 33cl" : "Faxe Kondi Lemon/Lime Soda 330ml",
             danish_term: "Faxe Kondi 33cl",
             package_price_dkk: 8.50,
             unit_price_dkk: 25.75,
@@ -265,10 +359,10 @@ export default function CameraScanner() {
             is_plant_based: true,
             is_gluten_free: true,
             matches_constraints: true,
-            summary: "Bibita danese agli agrumi con cauzione Pant A (+1 kr)",
+            summary: isIt ? "Classica bevanda danese agli agrumi con Pant A (+1 kr)" : "Classic Danish lemon soda with returnable Pant A (+1 kr)",
           },
           {
-            label: "Pågen Cinnamon Swirls 260g",
+            label: isIt ? "Pågen Girelle alla Cannella 260g" : "Pågen Cinnamon Swirls 260g",
             danish_term: "Pågen Gifflar Kanel 260g",
             package_price_dkk: 22.00,
             unit_price_dkk: 84.60,
@@ -282,10 +376,10 @@ export default function CameraScanner() {
             is_plant_based: false,
             is_gluten_free: false,
             matches_constraints: false,
-            summary: "Morbidi dolcetti scandinavi alla cannella per la pausa Fika",
+            summary: isIt ? "Dolcetti nordici alla cannella ideali per la colazione" : "Iconic Nordic cinnamon mini pastry rolls",
           },
           {
-            label: "Lurpak Salted Spreadable Butter 200g",
+            label: isIt ? "Lurpak Burro Salato Spalmabile 200g" : "Lurpak Salted Spreadable Butter 200g",
             danish_term: "Lurpak Smørbar 200g",
             package_price_dkk: 26.95,
             unit_price_dkk: 134.75,
@@ -299,7 +393,7 @@ export default function CameraScanner() {
             is_plant_based: false,
             is_gluten_free: true,
             matches_constraints: false,
-            summary: "Burro salato spalmabile iconico della tradizione danese",
+            summary: isIt ? "Autentico burro salato spalmabile danese da panna fresca" : "Authentic Danish churned salted spreadable butter",
           },
         ],
       };
@@ -321,7 +415,7 @@ export default function CameraScanner() {
     setView('dashboard');
     setScanResult(null);
     setImageUri(null);
-    setError(null);
+    setErrorModal(null);
   };
 
   const convertDKKtoEUR = (dkk: number) => (dkk / 7.46).toFixed(2);
@@ -370,19 +464,19 @@ export default function CameraScanner() {
     preferences.currency === 'EUR' ? `€${(dkk / 7.46).toFixed(2)}` : `${dkk.toFixed(2)} kr`;
 
   return (
-    <div className="relative w-full max-w-md mx-auto h-[100dvh] bg-zinc-950 text-zinc-100 overflow-hidden flex flex-col font-sans select-none">
+    <div className="relative w-full max-w-md mx-auto h-[100dvh] bg-zinc-50 text-zinc-900 dark:bg-[#0b0b0e] dark:text-zinc-100 overflow-hidden flex flex-col font-sans select-none transition-colors">
 
       {/* Hidden file inputs */}
       <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleCapture} />
       <input ref={galleryInputRef} type="file" accept="image/*" className="hidden" onChange={handleCapture} />
 
       {/* ─── HEADER ─── */}
-      <header className="h-14 w-full px-4 z-50 flex justify-between items-center bg-zinc-900/95 backdrop-blur-md border-b border-zinc-800 text-zinc-100 shrink-0">
+      <header className="h-14 w-full px-4 z-50 flex justify-between items-center bg-white/95 dark:bg-[#0b0b0e]/95 backdrop-blur-md border-b border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-zinc-100 shrink-0">
         <div className="flex items-center gap-2 cursor-pointer whitespace-nowrap flex-shrink-0" onClick={reset}>
-          <div className="w-8 h-8 rounded-xl bg-emerald-600 flex items-center justify-center shadow-sm">
+          <div className="w-8 h-8 rounded-xl bg-emerald-600 flex items-center justify-center shadow-xs">
             <span className="text-white font-black text-base">V</span>
           </div>
-          <h1 className="font-extrabold text-lg tracking-tight text-zinc-100">VognPilot</h1>
+          <h1 className="font-extrabold text-lg tracking-tight text-zinc-900 dark:text-zinc-100">VognPilot</h1>
         </div>
 
         <div className="flex items-center gap-1.5 whitespace-nowrap flex-shrink-0">
@@ -392,17 +486,18 @@ export default function CameraScanner() {
           {/* Settings */}
           <button
             onClick={() => setIsSettingsOpen(true)}
-            className="p-2 text-zinc-300 hover:text-white bg-zinc-800/80 hover:bg-zinc-800 rounded-xl border border-zinc-700/80 transition-all active:scale-95 relative flex-shrink-0"
+            className="p-2 text-zinc-600 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800/80 dark:hover:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700/80 transition-all active:scale-95 relative flex-shrink-0"
+            aria-label="Settings"
           >
             <Settings className="w-4 h-4" />
-            {activeDietaryCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 rounded-full ring-2 ring-zinc-900" />
-            )}
+            {activeDietaryCount > 0 ? (
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 rounded-full ring-2 ring-white dark:ring-zinc-900" />
+            ) : null}
           </button>
 
-          {/* Live cart total (compact, always visible) */}
-          <div className="bg-zinc-800 border border-zinc-700 text-zinc-100 px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-extrabold flex-shrink-0">
-            <ShoppingCart className="w-3.5 h-3.5 text-emerald-400" />
+          {/* Live cart total */}
+          <div className="bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-extrabold flex-shrink-0">
+            <ShoppingCart className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
             <span>
               {preferences.currency === 'EUR'
                 ? `€${(totalDKK / 7.46).toFixed(1)}`
@@ -414,11 +509,11 @@ export default function CameraScanner() {
 
       {/* ─── SCANNING VIEW ─── */}
       {view === 'scanning' && imageUri && (
-        <div className="flex-1 flex flex-col overflow-hidden bg-zinc-950">
+        <div className="flex-1 flex flex-col overflow-hidden bg-black">
           {/* Photo fill */}
           <div className="relative flex-1 overflow-hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={imageUri} alt="Scanning" className="w-full h-full object-cover opacity-50" />
+            <img src={imageUri} alt="Scanning" className="w-full h-full object-cover opacity-60" />
             <div className="absolute inset-0 flex flex-col items-center justify-end pb-0">
               {/* Scan laser line */}
               <div className="absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent animate-scan-laser opacity-90 pointer-events-none" />
@@ -426,11 +521,19 @@ export default function CameraScanner() {
           </div>
 
           {/* Loading sheet */}
-          <div className="bg-zinc-900 border-t border-zinc-800 p-4 pb-6 shrink-0">
-            <div className="flex items-center gap-2 mb-4">
-              <span className="font-bold text-zinc-100 text-base">{t.analyzingShelf}</span>
+          <div className="bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 p-4 pb-6 shrink-0 transition-colors">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="font-bold text-zinc-900 dark:text-zinc-100 text-base">{t.analyzingShelf}</span>
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping inline-block" />
             </div>
+
+            {/* Dense shelf message when taking > 4s */}
+            {isSlowScan ? (
+              <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 p-2 rounded-xl mb-3 flex items-center gap-1.5">
+                <span>⏱️</span> {t.analyzingDenseShelf}
+              </p>
+            ) : null}
+
             <div className="space-y-3">
               {[
                 { label: t.photoProcessed, done: true },
@@ -438,12 +541,14 @@ export default function CameraScanner() {
                 { label: loadingStep >= 2 ? t.translatingLabels : 'Translating labels & prices...', done: loadingStep >= 2, active: loadingStep === 1 },
               ].map((step, i) => (
                 <div key={i} className="flex items-center gap-3 text-xs">
-                  {step.done
-                    ? <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    : step.active
-                    ? <div className="w-4 h-4 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin shrink-0" />
-                    : <Circle className="w-4 h-4 text-zinc-700 shrink-0" />}
-                  <span className={step.done ? 'text-emerald-400 font-semibold' : step.active ? 'text-zinc-300 font-medium' : 'text-zinc-500'}>
+                  {step.done ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  ) : step.active ? (
+                    <div className="w-4 h-4 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin shrink-0" />
+                  ) : (
+                    <Circle className="w-4 h-4 text-zinc-400 dark:text-zinc-700 shrink-0" />
+                  )}
+                  <span className={step.done ? 'text-emerald-700 dark:text-emerald-400 font-semibold' : step.active ? 'text-zinc-800 dark:text-zinc-300 font-medium' : 'text-zinc-400 dark:text-zinc-500'}>
                     {step.label}
                   </span>
                 </div>
@@ -473,29 +578,29 @@ export default function CameraScanner() {
         <div className="flex-1 flex flex-col overflow-hidden">
 
           {/* Budget Card */}
-          <div className="px-4 py-3 border-b border-zinc-800 bg-zinc-900/60 shrink-0">
+          <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/60 shrink-0">
             <div className="flex justify-between items-center mb-2">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-400 uppercase tracking-wider">
-                <Target className="w-3.5 h-3.5 text-emerald-400" />
-                Budget
+              <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                <Target className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                {t.budget}
               </div>
               <div className="flex items-center gap-2">
-                <span className={`text-sm font-extrabold ${isOverBudget ? 'text-rose-400' : 'text-zinc-100'}`}>
+                <span className={`text-sm font-extrabold ${isOverBudget ? 'text-rose-500 dark:text-rose-400' : 'text-zinc-900 dark:text-zinc-100'}`}>
                   {preferences.currency === 'EUR'
                     ? `€${(totalDKK / 7.46).toFixed(1)} / €${(budgetTarget / 7.46).toFixed(0)}`
                     : `${totalDKK.toFixed(0)} / ${budgetTarget} kr`}
                 </span>
                 <button
                   onClick={() => { setTempBudget(budgetTarget.toString()); setIsBudgetDialogOpen(true); }}
-                  className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 border border-emerald-900/60 px-2 py-0.5 rounded-full flex items-center gap-1 active:scale-95"
+                  className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/80 border border-emerald-200 dark:border-emerald-900/60 px-2 py-0.5 rounded-full flex items-center gap-1 active:scale-95"
                 >
-                  <Pencil className="w-2.5 h-2.5" /> Edit
+                  <Pencil className="w-2.5 h-2.5" /> {t.editBudget}
                 </button>
               </div>
             </div>
 
             {/* Progress bar */}
-            <div className="h-2 w-full bg-zinc-800 rounded-full overflow-hidden">
+            <div className="h-2 w-full bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
               <div
                 className={`h-full transition-all duration-500 rounded-full ${isOverBudget ? 'bg-rose-500' : budgetPercent > 80 ? 'bg-amber-500' : 'bg-emerald-500'}`}
                 style={{ width: `${budgetPercent}%` }}
@@ -510,8 +615,8 @@ export default function CameraScanner() {
                   onClick={() => { setBudgetTarget(p); localStorage.setItem('vognpilot_budget', p.toString()); }}
                   className={`text-[10px] font-bold px-2.5 py-1 rounded-full border transition-all active:scale-95 ${
                     budgetTarget === p
-                      ? 'border-emerald-500 bg-emerald-950/60 text-emerald-300'
-                      : 'border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-zinc-700'
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-800 dark:border-emerald-500 dark:bg-emerald-950/60 dark:text-emerald-300'
+                      : 'border-zinc-200 bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-700'
                   }`}
                 >
                   {p} kr
@@ -524,15 +629,15 @@ export default function CameraScanner() {
           <div className="flex-1 overflow-y-auto hide-scrollbar px-3 py-3 space-y-2 pb-36">
             {cartItems.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-zinc-500 space-y-3 py-10">
-                <ShoppingCart className="w-12 h-12 opacity-20" />
-                <p className="font-semibold text-zinc-400 text-sm">{t.emptyList}</p>
-                <p className="text-xs text-center px-6 text-zinc-500 leading-relaxed">{t.emptyListSub}</p>
+                <ShoppingCart className="w-12 h-12 opacity-25" />
+                <p className="font-semibold text-zinc-700 dark:text-zinc-300 text-sm">{t.emptyList}</p>
+                <p className="text-xs text-center px-6 text-zinc-500 dark:text-zinc-400 leading-relaxed">{t.emptyListSub}</p>
                 <button
                   onClick={handleInstantDemoScan}
-                  className="mt-2 px-4 py-2.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 rounded-xl text-emerald-300 text-xs font-bold flex items-center gap-2 transition-all active:scale-95 shadow-sm"
+                  className="mt-2 px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 dark:bg-emerald-950/80 dark:hover:bg-emerald-900 dark:border-emerald-700/60 dark:text-emerald-300 rounded-xl text-xs font-bold flex items-center gap-2 transition-all active:scale-95 shadow-xs"
                 >
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>⚡ Prova Demo Istantanea</span>
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>{t.tryDemoShelf}</span>
                 </button>
               </div>
             ) : (
@@ -540,44 +645,48 @@ export default function CameraScanner() {
                 {cartItems.map(item => {
                   const qty = item.quantity || 1;
                   const rowTotal = ((item.price_dkk || 0) + (item.pant_fee_dkk || 0)) * qty;
+                  const pantFee = Number(item.pant_fee_dkk || 0);
+
                   return (
                     <div
                       key={item.id}
                       className={`flex items-center p-3 rounded-2xl border transition-all ${
                         item.is_checked
-                          ? 'bg-zinc-950/30 border-zinc-800/40 opacity-50'
-                          : 'bg-zinc-900 border-zinc-800 shadow-sm'
+                          ? 'bg-zinc-100/60 border-zinc-200/50 opacity-60 dark:bg-zinc-950/30 dark:border-zinc-800/40'
+                          : 'bg-white border-zinc-200 shadow-xs dark:bg-zinc-900 dark:border-zinc-800'
                       }`}
                     >
                       <button onClick={() => toggleItem(item.id!, item.is_checked)} className="mr-3 active:scale-90 transition-transform flex-shrink-0">
-                        {item.is_checked
-                          ? <CheckCircle2 className="w-6 h-6 text-emerald-500" />
-                          : <Circle className="w-6 h-6 text-zinc-600" />}
+                        {item.is_checked ? (
+                          <CheckCircle2 className="w-6 h-6 text-emerald-600 dark:text-emerald-500" />
+                        ) : (
+                          <Circle className="w-6 h-6 text-zinc-400 dark:text-zinc-600" />
+                        )}
                       </button>
 
                       <div className="flex-1 min-w-0 pr-2">
-                        <p className={`font-bold text-sm text-zinc-100 truncate ${item.is_checked ? 'line-through' : ''}`}>
+                        <p className={`font-bold text-sm text-zinc-900 dark:text-zinc-100 truncate ${item.is_checked ? 'line-through text-zinc-400 dark:text-zinc-500' : ''}`}>
                           {item.name}
                         </p>
                         <div className="flex items-center gap-2 mt-1">
                           {/* Qty controls */}
-                          <div className="flex items-center bg-zinc-800 rounded-lg border border-zinc-700">
-                            <button onClick={() => updateQty(item.id!, qty, -1)} className="px-2 py-0.5 active:bg-zinc-700 rounded-l-lg text-zinc-300">
+                          <div className="flex items-center bg-zinc-100 dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700">
+                            <button onClick={() => updateQty(item.id!, qty, -1)} className="px-2 py-0.5 active:bg-zinc-200 dark:active:bg-zinc-700 rounded-l-lg text-zinc-600 dark:text-zinc-300">
                               <Minus className="w-3 h-3" />
                             </button>
-                            <span className="text-xs font-black text-zinc-200 w-5 text-center">{qty}</span>
-                            <button onClick={() => updateQty(item.id!, qty, 1)} className="px-2 py-0.5 active:bg-zinc-700 rounded-r-lg text-zinc-300">
+                            <span className="text-xs font-black text-zinc-800 dark:text-zinc-200 w-5 text-center">{qty}</span>
+                            <button onClick={() => updateQty(item.id!, qty, 1)} className="px-2 py-0.5 active:bg-zinc-200 dark:active:bg-zinc-700 rounded-r-lg text-zinc-600 dark:text-zinc-300">
                               <Plus className="w-3 h-3" />
                             </button>
                           </div>
-                          <span className="text-xs font-black text-zinc-200">{formatCartPrice(rowTotal)}</span>
-                          {item.pant_fee_dkk && item.pant_fee_dkk > 0 && (
-                            <span className="text-[10px] text-zinc-400 bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 rounded">+{item.pant_fee_dkk} Pant</span>
-                          )}
+                          <span className="text-xs font-black text-zinc-800 dark:text-zinc-200">{formatCartPrice(rowTotal)}</span>
+                          {pantFee > 0 ? (
+                            <span className="text-[10px] text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-1.5 py-0.5 rounded font-semibold">+{pantFee} {t.returnable}</span>
+                          ) : null}
                         </div>
                       </div>
 
-                      <button onClick={() => removeItem(item.id!)} className="p-1.5 text-zinc-500 hover:text-rose-400 active:scale-90 transition-colors flex-shrink-0">
+                      <button onClick={() => removeItem(item.id!)} className="p-1.5 text-zinc-400 hover:text-rose-500 dark:text-zinc-500 dark:hover:text-rose-400 active:scale-90 transition-colors flex-shrink-0">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -586,11 +695,11 @@ export default function CameraScanner() {
 
                 {/* Cart subtotal footer */}
                 {cartItems.length > 0 && (
-                  <div className="pt-2 pb-1 border-t border-zinc-800 flex justify-between items-center text-xs text-zinc-400">
-                    <span>{cartItems.length} item{cartItems.length > 1 ? 's' : ''}</span>
+                  <div className="pt-2 pb-1 border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center text-xs text-zinc-500 dark:text-zinc-400">
+                    <span>{t.itemCount(cartItems.length)}</span>
                     <div className="text-right">
-                      {pantTotalDKK > 0 && <span className="block text-emerald-400">+{pantTotalDKK.toFixed(2)} kr Pant</span>}
-                      <span className="font-extrabold text-zinc-100 text-sm">
+                      {pantTotalDKK > 0 && <span className="block text-emerald-600 dark:text-emerald-400 font-semibold">+{pantTotalDKK.toFixed(2)} kr Pant</span>}
+                      <span className="font-extrabold text-zinc-900 dark:text-zinc-100 text-sm">
                         {preferences.currency === 'EUR' ? `≈ €${(totalDKK / 7.46).toFixed(2)}` : `${totalDKK.toFixed(2)} kr`}
                       </span>
                     </div>
@@ -601,12 +710,12 @@ export default function CameraScanner() {
           </div>
 
           {/* Floating Action Bar */}
-          <div className="absolute bottom-0 left-0 right-0 p-4 pb-safe bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent pointer-events-none">
+          <div className="absolute bottom-0 left-0 right-0 p-4 pb-safe bg-gradient-to-t from-zinc-50 via-zinc-50/95 to-transparent dark:from-[#0b0b0e] dark:via-[#0b0b0e]/95 dark:to-transparent pointer-events-none">
             <div className="flex gap-3 pointer-events-auto">
               {/* Primary: Scan */}
               <button
                 onClick={() => cameraInputRef.current?.click()}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white py-4 rounded-2xl flex items-center justify-center gap-2 font-bold text-base shadow-lg shadow-emerald-950/30 transition-all active:scale-[0.98]"
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white py-4 rounded-2xl flex items-center justify-center gap-2 font-bold text-base shadow-lg shadow-emerald-950/20 transition-all active:scale-[0.98]"
               >
                 <Camera className="w-5 h-5" />
                 {t.takePhoto}
@@ -615,7 +724,7 @@ export default function CameraScanner() {
               {/* Secondary: Gallery */}
               <button
                 onClick={() => galleryInputRef.current?.click()}
-                className="w-16 bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 text-zinc-200 rounded-2xl flex items-center justify-center transition-all active:scale-[0.98] shadow-sm"
+                className="w-16 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 rounded-2xl flex items-center justify-center transition-all active:scale-[0.98] shadow-xs"
                 aria-label={t.gallery}
               >
                 <Upload className="w-5 h-5" />
@@ -626,63 +735,125 @@ export default function CameraScanner() {
             <div className="mt-2.5 flex justify-center pointer-events-auto">
               <button
                 onClick={handleInstantDemoScan}
-                className="w-full py-2.5 px-3 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 border border-emerald-800/40 text-emerald-400 font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-sm"
+                className="w-full py-2.5 px-3 rounded-xl bg-white/90 hover:bg-zinc-100 border border-emerald-300 text-emerald-700 dark:bg-zinc-900/90 dark:hover:bg-zinc-800 dark:border-emerald-800/40 dark:text-emerald-400 font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-xs"
               >
-                <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span>⚡ Prova Scaffale Demo (Istantaneo)</span>
+                <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span>{t.tryDemoShelfInstant}</span>
               </button>
             </div>
 
             {/* Dietary filter hint */}
-            {activeDietaryCount > 0 && (
+            {activeDietaryCount > 0 ? (
               <div
                 onClick={() => setIsSettingsOpen(true)}
-                className="mt-1.5 flex items-center justify-center gap-1.5 text-xs text-emerald-400 cursor-pointer opacity-80 pointer-events-auto"
+                className="mt-1.5 flex items-center justify-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 cursor-pointer opacity-90 pointer-events-auto font-medium"
               >
                 <Sparkles className="w-3 h-3" />
-                <span>{activeDietaryCount} dietary filter{activeDietaryCount > 1 ? 's' : ''} active</span>
+                <span>{activeDietaryCount} {activeDietaryCount > 1 ? t.activeFiltersPlural : t.activeFilters}</span>
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       )}
 
-      {/* ─── ERROR OVERLAY ─── */}
-      {error && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-[120] px-6 animate-in fade-in">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl flex flex-col items-center text-center text-zinc-100">
-            <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center mb-4">
-              <AlertTriangle className="w-7 h-7 text-rose-400" />
+      {/* ─── SMART ERROR MODAL ─── */}
+      {errorModal ? (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[120] px-6 animate-in fade-in">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl flex flex-col items-center text-center text-zinc-900 dark:text-zinc-100 transition-colors">
+            <div className="w-14 h-14 rounded-2xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 flex items-center justify-center mb-4">
+              <AlertTriangle className="w-7 h-7 text-rose-500 dark:text-rose-400" />
             </div>
-            <h3 className="font-extrabold text-lg mb-2">{t.couldNotRead}</h3>
-            <p className="text-xs text-zinc-400 mb-6 leading-relaxed break-words max-h-32 overflow-y-auto px-1">
-              {error}
+            <h3 className="font-extrabold text-lg mb-2">{errorModal.title}</h3>
+            <p className="text-xs text-zinc-600 dark:text-zinc-400 mb-6 leading-relaxed px-1">
+              {errorModal.message}
             </p>
             <div className="w-full flex flex-col gap-2.5">
-              <button
-                onClick={() => { setError(null); cameraInputRef.current?.click(); }}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all"
-              >
-                <Camera className="w-4 h-4" /> {t.retakePhoto}
-              </button>
-              <button
-                onClick={() => setError(null)}
-                className="w-full bg-zinc-800 border border-zinc-700 text-zinc-300 font-semibold py-2.5 rounded-xl active:scale-95 transition-all text-xs"
-              >
-                {t.dismiss}
-              </button>
+              {/* Contextual Primary Action Button */}
+              {errorModal.code === 'TIMEOUT_TOO_DENSE' && (
+                <button
+                  onClick={() => { setErrorModal(null); cameraInputRef.current?.click(); }}
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all text-sm shadow-md"
+                >
+                  <Camera className="w-4 h-4" /> {t.frameCloser}
+                </button>
+              )}
+
+              {errorModal.code === 'NO_PRODUCTS_FOUND' && (
+                <button
+                  onClick={() => { setErrorModal(null); cameraInputRef.current?.click(); }}
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all text-sm shadow-md"
+                >
+                  <Camera className="w-4 h-4" /> {t.retakePhoto}
+                </button>
+              )}
+
+              {errorModal.code === 'QUOTA_EXCEEDED' && (
+                <>
+                  <button
+                    onClick={() => {
+                      setErrorModal(null);
+                      if (lastBase64) executeScan(lastBase64);
+                      else cameraInputRef.current?.click();
+                    }}
+                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all text-sm shadow-md"
+                  >
+                    <RefreshCw className="w-4 h-4" /> {t.retry}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setErrorModal(null);
+                      handleInstantDemoScan();
+                    }}
+                    className="w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950/80 dark:hover:bg-emerald-900 dark:text-emerald-300 dark:border-emerald-700/60 font-bold py-3 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all text-xs"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> {t.loadDemoShelf}
+                  </button>
+                </>
+              )}
+
+              {(errorModal.code === 'NETWORK_ERROR' || errorModal.code === 'SERVER_ERROR') && (
+                <>
+                  {lastBase64 ? (
+                    <button
+                      onClick={() => {
+                        setErrorModal(null);
+                        executeScan(lastBase64);
+                      }}
+                      className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all text-sm shadow-md"
+                    >
+                      <RefreshCw className="w-4 h-4" /> {t.retrySend}
+                    </button>
+                  ) : null}
+                  <button
+                    onClick={() => { setErrorModal(null); cameraInputRef.current?.click(); }}
+                    className="w-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-zinc-200 font-bold py-3 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all text-xs border border-zinc-200 dark:border-zinc-700"
+                  >
+                    <Camera className="w-4 h-4" /> {t.retakePhoto}
+                  </button>
+                </>
+              )}
+
+              {/* Standard Dismiss Button */}
+              {errorModal.code !== 'QUOTA_EXCEEDED' && (
+                <button
+                  onClick={() => setErrorModal(null)}
+                  className="w-full bg-zinc-100 hover:bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-zinc-300 font-semibold py-2.5 rounded-xl active:scale-95 transition-all text-xs border border-zinc-200 dark:border-zinc-700"
+                >
+                  {t.dismiss}
+                </button>
+              )}
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Budget Dialog */}
       {isBudgetDialogOpen && (
-        <div className="fixed inset-0 z-[260] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-xs bg-zinc-900 border border-zinc-800 rounded-3xl p-5 shadow-2xl text-zinc-100 space-y-4 animate-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-[260] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-xs bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-5 shadow-2xl text-zinc-900 dark:text-zinc-100 space-y-4 animate-in zoom-in-95 duration-150 transition-colors">
             <div className="flex items-center justify-between">
-              <h3 className="font-extrabold text-base">Set Budget</h3>
-              <button onClick={() => setIsBudgetDialogOpen(false)} className="p-1.5 rounded-full bg-zinc-800 text-zinc-400 hover:text-white active:scale-95">
+              <h3 className="font-extrabold text-base">{t.setBudget}</h3>
+              <button onClick={() => setIsBudgetDialogOpen(false)} className="p-1.5 rounded-full bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 dark:hover:text-white active:scale-95">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -693,26 +864,26 @@ export default function CameraScanner() {
                   onClick={() => setTempBudget(p.toString())}
                   className={`py-2 text-xs font-bold rounded-xl border transition-all active:scale-95 ${
                     tempBudget === p.toString()
-                      ? 'border-emerald-500 bg-emerald-950/60 text-emerald-300'
-                      : 'border-zinc-800 bg-zinc-950 text-zinc-300 hover:border-zinc-700'
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                      : 'border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:border-zinc-700'
                   }`}
                 >
                   {p} kr
                 </button>
               ))}
             </div>
-            <div className="flex items-center bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 focus-within:border-emerald-500 transition-colors">
+            <div className="flex items-center bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2.5 focus-within:border-emerald-500 transition-colors">
               <input
                 type="number" inputMode="numeric" value={tempBudget}
                 onChange={e => setTempBudget(e.target.value)}
-                className="w-full bg-transparent text-zinc-100 font-extrabold text-base focus:outline-none"
+                className="w-full bg-transparent text-zinc-900 dark:text-zinc-100 font-extrabold text-base focus:outline-none"
                 placeholder="200"
               />
               <span className="text-xs font-bold text-zinc-400 ml-2">kr</span>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => setIsBudgetDialogOpen(false)} className="flex-1 bg-zinc-800 text-zinc-300 font-bold py-2.5 rounded-xl text-xs border border-zinc-700 active:scale-95">Cancel</button>
-              <button onClick={saveBudget} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-xl text-xs active:scale-95">Save</button>
+              <button onClick={() => setIsBudgetDialogOpen(false)} className="flex-1 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold py-2.5 rounded-xl text-xs border border-zinc-200 dark:border-zinc-700 active:scale-95">{t.cancel}</button>
+              <button onClick={saveBudget} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-xl text-xs active:scale-95">{t.save}</button>
             </div>
           </div>
         </div>
