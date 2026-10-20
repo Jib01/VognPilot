@@ -10,6 +10,7 @@ interface Props {
   imageUri: string;
   onAddToList: (prod: ProductCard) => void;
   onNewScan: () => void;
+  onViewCart?: () => void;
   convertDKKtoEUR: (dkk: number) => string;
   language?: Language;
   primaryCurrency?: "DKK" | "EUR";
@@ -20,6 +21,7 @@ export function ScanResultSheet({
   imageUri,
   onAddToList,
   onNewScan,
+  onViewCart,
   convertDKKtoEUR,
   language = 'en',
   primaryCurrency = 'DKK',
@@ -80,9 +82,9 @@ export function ScanResultSheet({
           ) : null}
         </div>
         <button
-          onClick={onNewScan}
+          onClick={onViewCart || onNewScan}
           className="p-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-600 hover:text-zinc-900 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:text-white border border-zinc-200 dark:border-zinc-700 active:scale-95 transition-all flex-shrink-0"
-          title={t.newScan}
+          title={t.dismiss}
         >
           <X className="w-4 h-4" />
         </button>
@@ -251,15 +253,22 @@ export function ScanResultSheet({
         </div>
       ) : null}
 
-      {/* Sticky bottom: New Scan */}
+      {/* Sticky bottom: New Scan & View Cart */}
       {hasProducts ? (
-        <div className="p-3 border-t border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-[#0b0b0e]/95 backdrop-blur-md shrink-0">
+        <div className="p-3 border-t border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-[#0b0b0e]/95 backdrop-blur-md shrink-0 flex gap-2.5">
           <button
             onClick={onNewScan}
-            className="w-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border border-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-zinc-100 dark:border-zinc-700 font-bold py-3 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all"
+            className="flex-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border border-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-zinc-100 dark:border-zinc-700 font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all text-xs sm:text-sm"
           >
             <RefreshCw className="w-4 h-4" />
             {t.newScan}
+          </button>
+          <button
+            onClick={onViewCart || onNewScan}
+            className="flex-1 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all shadow-md shadow-emerald-950/20 text-xs sm:text-sm"
+          >
+            <ShoppingCart className="w-4 h-4" />
+            {t.viewCart}
           </button>
         </div>
       ) : null}

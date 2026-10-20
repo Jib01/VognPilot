@@ -495,15 +495,20 @@ export default function CameraScanner() {
             ) : null}
           </button>
 
-          {/* Live cart total */}
-          <div className="bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-extrabold flex-shrink-0">
+          {/* Live cart total button */}
+          <button
+            onClick={() => setView('dashboard')}
+            className="bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-extrabold flex-shrink-0 active:scale-95 transition-all cursor-pointer shadow-xs"
+            aria-label={t.shoppingList}
+            title={t.shoppingList}
+          >
             <ShoppingCart className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
             <span>
               {preferences.currency === 'EUR'
                 ? `€${(totalDKK / 7.46).toFixed(1)}`
                 : `${totalDKK.toFixed(0)} kr`}
             </span>
-          </div>
+          </button>
         </div>
       </header>
 
@@ -566,6 +571,7 @@ export default function CameraScanner() {
             imageUri={imageUri}
             onAddToList={handleAddToList}
             onNewScan={reset}
+            onViewCart={() => setView('dashboard')}
             convertDKKtoEUR={convertDKKtoEUR}
             language={preferences.language}
             primaryCurrency={preferences.currency}
@@ -623,7 +629,7 @@ export default function CameraScanner() {
                 <p className="text-xs text-center px-6 text-zinc-500 dark:text-zinc-400 leading-relaxed max-w-xs">{t.emptyListSub}</p>
                 <button
                   onClick={() => setIsTutorialOpen(true)}
-                  className="mt-1 px-4 py-2 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 text-zinc-700 dark:bg-zinc-850 dark:hover:bg-zinc-800 dark:border-zinc-700/80 dark:text-zinc-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95"
+                  className="mt-1 px-4 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border border-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-zinc-100 dark:border-zinc-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-xs"
                 >
                   <HelpCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                   <span>{t.howItWorks}</span>
@@ -685,7 +691,7 @@ export default function CameraScanner() {
                 {/* Cart subtotal footer */}
                 {cartItems.length > 0 && (
                   <div className="pt-2 pb-1 border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center text-xs text-zinc-500 dark:text-zinc-400">
-                    <span>{t.itemCount(cartItems.length)}</span>
+                    <span>{typeof t.itemCount === 'function' ? t.itemCount(cartItems.length) : `${cartItems.length} items`}</span>
                     <div className="text-right">
                       {pantTotalDKK > 0 && <span className="block text-emerald-600 dark:text-emerald-400 font-semibold">+{pantTotalDKK.toFixed(2)} kr Pant</span>}
                       <span className="font-extrabold text-zinc-900 dark:text-zinc-100 text-sm">
