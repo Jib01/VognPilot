@@ -2,51 +2,46 @@
 
 import { useEffect } from 'react';
 import { db } from '../lib/db';
-import { API_URL } from '../lib/api';
+
+const REMOTE_API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export function useSyncEngine() {
   useEffect(() => {
+    if (!REMOTE_API_URL) return;
+
     const syncData = async () => {
-      // Offline check
       if (!navigator.onLine) return;
-      
+
       try {
         const pendingItems = await db.groceryList.where('sync_status').equals('pending').toArray();
         if (pendingItems.length === 0) return;
 
-        console.log(`[Sync Engine] Found ${pendingItems.length} pending items. Pushing to backend...`);
-        
-        // Sanitize legacy items that might be missing 'quantity'
         const payload = pendingItems.map(item => ({
-           ...item,
-           quantity: item.quantity || 1
+          ...item,
+          quantity: item.quantity || 1,
         }));
 
-        const response = await fetch(`${API_URL}/api/v1/groceries/sync`, {
+        const response = await fetch(`${REMOTE_API_URL}/api/v1/groceries/sync`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
         });
-        
+
         if (!response.ok) {
-           const errText = await response.text();
-           throw new Error(`Backend sync failed: ${response.status} ${errText}`);
+          throw new Error(`Backend sync failed: ${response.status}`);
         }
 
-        // Mark as synced locally
         for (const item of pendingItems) {
-          await db.groceryList.update(item.id!, { sync_status: 'synced' });
+          if (item.id != null) {
+            await db.groceryList.update(item.id, { sync_status: 'synced' });
+          }
         }
-        
-        console.log(`[Sync Engine] Successfully synced ${pendingItems.length} items.`);
       } catch (error) {
-        console.error("[Sync Engine] Sync failed, will retry later.", error);
+        console.warn('[Sync Engine] Sync deferred:', error);
       }
     };
 
     window.addEventListener('online', syncData);
-    
-    // Attempt sync immediately on mount if online
     if (typeof navigator !== 'undefined' && navigator.onLine) {
       syncData();
     }

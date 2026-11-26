@@ -10,6 +10,7 @@ export interface GroceryItem {
   pant_fee_dkk?: number;
   quantity: number;
   is_checked: boolean;
+  status?: 'todo' | 'in_cart';
   sync_status: 'synced' | 'pending';
   created_at: number;
 }
@@ -24,6 +25,9 @@ export class VognPilotDB extends Dexie {
     });
     this.version(2).stores({
       groceryList: '++id, uuid, is_checked, sync_status, created_at'
+    });
+    this.version(3).stores({
+      groceryList: '++id, uuid, is_checked, status, sync_status, created_at'
     });
   }
 }

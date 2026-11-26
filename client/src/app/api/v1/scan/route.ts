@@ -5,37 +5,85 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
-function buildPrompt(targetLang: string) {
-  return `Analyze this Danish grocery image.
-CRITICAL SPEED RULE: Focus ONLY on the 1 to 4 largest, clearest products in the center/foreground. Completely ignore small background items or crowded distant shelves.
-TRANSLATION RULE: Translate product names and summaries into ${targetLang}.
+function buildPrompt(targetLang: string, dietary: string[], targetItem?: string) {
+  const dietaryText = dietary.length > 0
+    ? `USER DIETARY FILTERS: ${dietary.join(', ')}. Flag any product violating these in "dietary_warning" in ${targetLang} (null if compliant).`
+    : 'USER DIETARY FILTERS: none.';
 
-Return ONLY valid JSON matching this exact schema:
+  const targetText = targetItem
+    ? `USER IS LOOKING FOR: "${targetItem}". Prioritize matching items and note relevance in "copilot_tip".`
+    : '';
+
+  return `Analyze this Danish supermarket shelf/product image for a shopper.
+SPEED RULE: Focus ONLY on the 1 to 4 largest, clearest products in the foreground. Ignore tiny background shelves.
+LANGUAGE RULE: Write all translated names, summaries, warnings, and copilot_tip in ${targetLang}.
+${dietaryText}
+${targetText}
+
+Return ONLY valid JSON matching this schema:
 {
+  "copilot_tip": "1 short practical sentence in ${targetLang} telling which product is best value/fit and why (e.g. compare price per kg/L or dietary fit).",
+  "recommended_index": 0,
   "items": [
     {
-      "id": "1",
-      "danish_name": "Original Danish name on label",
-      "english_name": "Clear translation in ${targetLang} + weight/volume (e.g. Latte Parzialmente Scremato Bio 1L / Organic Semi-Skimmed Milk 1L)",
+      "danish_name": "Exact Danish name on label",
+      "translated_name": "Clear ${targetLang} name + weight/volume (e.g. 500g / 1L)",
       "price_dkk": 14.5,
+      "unit_price_dkk": 29.0,
+      "unit_measure": "kg or L (null if unknown)",
       "pant_dkk": 0,
-      "category": "Dairy / Drinks / Meat / Snacks / Bakery / Produce / Other",
+      "multipack_offer": "Exact Danish deal text e.g. 'Ta 2 for 30 kr' or null",
       "is_organic": false,
       "is_lactose_free": false,
       "is_vegan": false,
       "is_gluten_free": false,
-      "summary": "Max 10 words in ${targetLang} describing the product and key dietary info"
+      "dietary_warning": "Short warning in ${targetLang} ONLY if it violates USER DIETARY FILTERS, else null",
+      "protein_g_per_100g": null,
+      "fat_percentage": null,
+      "sugar_g_per_100g": null,
+      "summary": "Max 10 words in ${targetLang}"
     }
   ]
 }
 Rules:
-- Maximum 4 items.
-- No bounding boxes.
-- Set pant_dkk to 1, 1.5, or 3 ONLY if it is a returnable bottle/can with Danish Pant, otherwise 0.`;
+- Max 4 items.
+- Calculate or read unit_price_dkk per kg or L whenever weight/volume or shelf kr/kg is visible so shopper can compare real value.
+- Set pant_dkk to 1, 1.5, or 3 ONLY for Danish returnable bottles/cans (Pant A/B/C), else 0.
+- If no food/grocery product or readable price tag is visible, return {"items":[]}.`;
 }
 
-function mapItemToProduct(item: any, preferences: any): ProductCard {
-  const dietary = preferences?.dietary_lifestyle || [];
+interface RawProductItem {
+  translated_name?: string;
+  english_name?: string;
+  danish_name?: string;
+  danish_term?: string;
+  label?: string;
+  price_dkk?: number | string | null;
+  package_price_dkk?: number | string | null;
+  unit_price_dkk?: number | string | null;
+  unit_measure?: string | null;
+  pant_dkk?: number | string | null;
+  pant_fee_dkk?: number | string | null;
+  multipack_offer?: string | null;
+  fat_percentage?: number | string | null;
+  sugar_g_per_100g?: number | string | null;
+  protein_g_per_100g?: number | string | null;
+  is_organic?: boolean;
+  is_lactose_free?: boolean;
+  is_vegan?: boolean;
+  is_plant_based?: boolean;
+  is_gluten_free?: boolean;
+  dietary_warning?: string | null;
+  summary?: string | null;
+  [key: string]: unknown;
+}
+
+interface ScanPreferences {
+  language?: string;
+  dietary_lifestyle?: string[];
+}
+
+function mapItemToProduct(item: RawProductItem, dietary: string[]): ProductCard {
   let matches = true;
   if (dietary.includes('organic') && !item.is_organic) matches = false;
   if (dietary.includes('vegan') && !item.is_vegan) matches = false;
@@ -43,14 +91,18 @@ function mapItemToProduct(item: any, preferences: any): ProductCard {
   if (dietary.includes('gluten_free') && !item.is_gluten_free) matches = false;
 
   const pant = Number(item.pant_dkk ?? item.pant_fee_dkk ?? 0);
+  const warning = item.dietary_warning && String(item.dietary_warning).toLowerCase() !== 'null'
+    ? String(item.dietary_warning)
+    : null;
 
   return {
-    label: item.english_name || item.danish_name || item.label || 'Danish Product',
-    danish_term: item.danish_name || item.danish_term || item.english_name || '',
+    label: item.translated_name || item.english_name || item.danish_name || item.label || 'Danish Product',
+    danish_term: item.danish_name || item.danish_term || '',
     package_price_dkk: Number(item.price_dkk ?? item.package_price_dkk ?? 0),
-    unit_price_dkk: item.unit_price_dkk != null ? Number(item.unit_price_dkk) : null,
+    unit_price_dkk: item.unit_price_dkk != null && Number(item.unit_price_dkk) > 0 ? Number(item.unit_price_dkk) : null,
+    unit_measure: item.unit_measure || null,
     pant_fee_dkk: pant > 0 ? pant : null,
-    multipack_offer: item.multipack_offer || null,
+    multipack_offer: item.multipack_offer && String(item.multipack_offer).toLowerCase() !== 'null' ? String(item.multipack_offer) : null,
     fat_percentage: item.fat_percentage != null ? Number(item.fat_percentage) : null,
     sugar_g_per_100g: item.sugar_g_per_100g != null ? Number(item.sugar_g_per_100g) : null,
     protein_g_per_100g: item.protein_g_per_100g != null ? Number(item.protein_g_per_100g) : null,
@@ -58,22 +110,25 @@ function mapItemToProduct(item: any, preferences: any): ProductCard {
     is_lactose_free: Boolean(item.is_lactose_free),
     is_plant_based: Boolean(item.is_vegan || item.is_plant_based),
     is_gluten_free: Boolean(item.is_gluten_free),
-    matches_constraints: matches,
+    matches_constraints: matches && !warning,
+    dietary_warning: warning,
     summary: item.summary || null,
   };
 }
 
 export async function POST(request: NextRequest) {
+  const startTime = Date.now();
   const rawApiKeys = (process.env.GEMINI_API_KEY || '').trim();
   const apiKeys = rawApiKeys
     .split(',')
     .map(k => k.trim())
     .filter(Boolean);
 
-  let preferences: any = {};
+  let preferences: ScanPreferences = {};
   let base64 = '';
   let mimeType = 'image/jpeg';
   let language = 'en';
+  let targetItem = '';
 
   try {
     const contentType = request.headers.get('content-type') || '';
@@ -87,6 +142,7 @@ export async function POST(request: NextRequest) {
       mimeType = body.mimeType || 'image/jpeg';
       preferences = body.preferences || {};
       language = body.language || preferences?.language || 'en';
+      targetItem = typeof body.targetItem === 'string' ? body.targetItem.trim() : '';
     } else {
       const formData = await request.formData();
       const file = formData.get('file') as File | null;
@@ -104,26 +160,24 @@ export async function POST(request: NextRequest) {
   } catch (parseErr) {
     console.error('[Scan Route] Request body parse failed:', parseErr);
     return NextResponse.json(
-      { error_code: 'BAD_REQUEST', message: 'Payload richiesta non valido' },
+      { error_code: 'BAD_REQUEST', message: 'Invalid request payload' },
       { status: 400 }
     );
   }
 
-  // Validate API Key presence
   if (apiKeys.length === 0) {
-    console.error('[Scan Route] No GEMINI_API_KEY configured in environment.');
     return NextResponse.json(
       {
         error_code: 'AUTH_ERROR',
         message: language === 'it'
-          ? 'Chiave API Gemini non valida o mancante nelle variabili d\'ambiente.'
+          ? 'Chiave API Gemini mancante o non valida nelle variabili d\'ambiente.'
           : 'Gemini API key is missing or invalid in environment variables.',
       },
       { status: 401 }
     );
   }
 
-  if (!base64 || base64.length === 0) {
+  if (!base64) {
     return NextResponse.json(
       {
         error_code: 'NO_IMAGE',
@@ -133,13 +187,44 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const dietary: string[] = Array.isArray(preferences?.dietary_lifestyle) ? preferences.dietary_lifestyle : [];
   const targetLang = language === 'it' ? 'Italian' : 'English';
-  const prompt = buildPrompt(targetLang);
+  const prompt = buildPrompt(targetLang, dietary, targetItem);
 
-  // Time budget: Max 14 seconds total on server (7.5s attempt 1 + 6.5s attempt 2)
+  // Empirically benchmarked fast models with minimal thinking (avg 1-3s)
   const ATTEMPTS = [
-    { model: 'gemini-3.5-flash-lite', timeoutMs: 7500 },
-    { model: 'gemini-3.6-flash', timeoutMs: 6500 },
+    {
+      model: 'gemini-3.1-flash-lite',
+      timeoutMs: 8500,
+      genConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 900,
+        responseMimeType: 'application/json',
+        mediaResolution: 'MEDIA_RESOLUTION_MEDIUM',
+        thinkingConfig: { thinkingLevel: 'minimal' },
+      },
+    },
+    {
+      model: 'gemini-3-flash-preview',
+      timeoutMs: 8500,
+      genConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 900,
+        responseMimeType: 'application/json',
+        mediaResolution: 'MEDIA_RESOLUTION_MEDIUM',
+        thinkingConfig: { thinkingLevel: 'minimal' },
+      },
+    },
+    {
+      model: 'gemini-3.5-flash-lite',
+      timeoutMs: 7000,
+      genConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 900,
+        responseMimeType: 'application/json',
+        thinkingConfig: { thinkingLevel: 'minimal' },
+      },
+    },
   ];
 
   let isQuotaExceeded = false;
@@ -149,9 +234,8 @@ export async function POST(request: NextRequest) {
 
   for (const apiKey of apiKeys) {
     for (const attempt of ATTEMPTS) {
-      const { model, timeoutMs } = attempt;
+      const { model, timeoutMs, genConfig } = attempt;
       try {
-        console.log(`[Scan Route] Calling ${model} (timeout ${timeoutMs}ms)...`);
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
         const res = await fetch(url, {
@@ -166,24 +250,18 @@ export async function POST(request: NextRequest) {
                 ],
               },
             ],
-            generationConfig: {
-              temperature: 0.1,
-              maxOutputTokens: 800,
-              responseMimeType: 'application/json',
-            },
+            generationConfig: genConfig,
           }),
           signal: AbortSignal.timeout(timeoutMs),
         });
 
         if (res.status === 429) {
           isQuotaExceeded = true;
-          console.warn(`[Scan Route] ${model} 429 quota reached.`);
           continue;
         }
 
         if (res.status === 400 || res.status === 401 || res.status === 403) {
           const errText = await res.text();
-          console.error(`[Scan Route] ${model} auth error (${res.status}):`, errText);
           if (errText.includes('API_KEY') || errText.includes('identity') || errText.includes('unregistered')) {
             isAuthError = true;
           }
@@ -193,18 +271,13 @@ export async function POST(request: NextRequest) {
 
         if (!res.ok) {
           const errText = await res.text();
-          console.warn(`[Scan Route] ${model} failed (${res.status}):`, errText);
           lastErrorMsg = `${model} ${res.status}: ${errText.slice(0, 150)}`;
           continue;
         }
 
         const data = await res.json();
         const candidateText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-        if (!candidateText) {
-          console.warn(`[Scan Route] ${model} returned empty candidate text`);
-          continue;
-        }
+        if (!candidateText) continue;
 
         const cleaned = candidateText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
         const parsed = JSON.parse(cleaned);
@@ -212,9 +285,7 @@ export async function POST(request: NextRequest) {
           ? parsed.items
           : (Array.isArray(parsed?.detected_products) ? parsed.detected_products : []);
 
-        // If no products were found in image: return 422
         if (rawItems.length === 0) {
-          console.log('[Scan Route] 0 items found in image. Returning 422 NO_PRODUCTS_FOUND.');
           return NextResponse.json(
             {
               error_code: 'NO_PRODUCTS_FOUND',
@@ -226,43 +297,48 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        // Limit strictly to 4 items max
-        const detectedProducts: ProductCard[] = rawItems.slice(0, 4).map((item: any) =>
-          mapItemToProduct(item, preferences)
+        const detectedProducts: ProductCard[] = rawItems.slice(0, 4).map((item: RawProductItem) =>
+          mapItemToProduct(item, dietary)
         );
 
-        const recommendedIdx = detectedProducts.findIndex(p => p.matches_constraints);
+        let recommendedIdx = typeof parsed?.recommended_index === 'number'
+          ? parsed.recommended_index
+          : detectedProducts.findIndex(p => p.matches_constraints);
+        if (recommendedIdx < 0 || recommendedIdx >= detectedProducts.length) {
+          recommendedIdx = Math.max(0, detectedProducts.findIndex(p => p.matches_constraints));
+        }
 
         const finalResult: ScanResult = {
           items: rawItems.slice(0, 4),
           detected_products: detectedProducts,
-          recommended_product_index: recommendedIdx >= 0 ? recommendedIdx : 0,
-          decision_reason: language === 'it'
+          recommended_product_index: recommendedIdx,
+          copilot_tip: parsed?.copilot_tip || null,
+          decision_reason: parsed?.copilot_tip || (language === 'it'
             ? `Rilevati ${detectedProducts.length} prodotti in primo piano.`
-            : `Detected ${detectedProducts.length} prominent products in foreground.`,
+            : `Detected ${detectedProducts.length} prominent products in foreground.`),
           is_blurry_or_obscured: false,
+          model_used: model,
+          latency_ms: Date.now() - startTime,
         };
 
         return NextResponse.json(finalResult, { status: 200 });
-      } catch (err: any) {
-        if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
+      } catch (err: unknown) {
+        const errObj = err as { name?: string; message?: string };
+        if (errObj?.name === 'TimeoutError' || errObj?.name === 'AbortError') {
           isTimeout = true;
-          console.warn(`[Scan Route] ${model} timed out after ${timeoutMs}ms`);
         } else {
-          lastErrorMsg = err?.message || String(err);
-          console.warn(`[Scan Route] ${model} error:`, lastErrorMsg);
+          lastErrorMsg = errObj?.message || String(err);
         }
       }
     }
   }
 
-  // Handle specific structured failure modes without hiding behind mock data
   if (isQuotaExceeded) {
     return NextResponse.json(
       {
         error_code: 'QUOTA_EXCEEDED',
         message: language === 'it'
-          ? 'Limite di richieste gratuite Gemini API raggiunto. Riprova tra 1 minuto.'
+          ? 'Limite richieste gratuite Gemini API raggiunto. Riprova tra 1 minuto.'
           : 'Gemini free API quota reached for this minute. Please retry in 1 minute.',
       },
       { status: 429 }
@@ -274,8 +350,8 @@ export async function POST(request: NextRequest) {
       {
         error_code: 'TIMEOUT_TOO_DENSE',
         message: language === 'it'
-          ? 'L\'immagine contiene troppi elementi o richiede troppo tempo. Inquadra da più vicino solo 1-3 prodotti.'
-          : 'The image contains too many items or took too long. Move closer and frame 1-3 products.',
+          ? 'L\'immagine richiede troppo tempo. Inquadra da più vicino 1–3 prodotti.'
+          : 'The scan took too long. Move closer and frame 1–3 products.',
       },
       { status: 408 }
     );

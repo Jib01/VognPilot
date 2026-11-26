@@ -2,6 +2,7 @@ export interface ProductCard {
   label: string;
   danish_term: string;
   unit_price_dkk?: number | null;
+  unit_measure?: string | null;
   package_price_dkk?: number | null;
   pant_fee_dkk?: number | null;
   multipack_offer?: string | null;
@@ -13,15 +14,19 @@ export interface ProductCard {
   is_plant_based: boolean;
   is_gluten_free?: boolean;
   matches_constraints: boolean;
+  dietary_warning?: string | null;
   summary?: string | null;
 }
 
 export interface ScanResult {
   detected_products: ProductCard[];
-  items?: any[];
+  items?: Record<string, unknown>[];
   recommended_product_index?: number | null;
   decision_reason?: string | null;
+  copilot_tip?: string | null;
   is_blurry_or_obscured?: boolean;
   is_demo_fallback?: boolean;
   notice?: string | null;
+  model_used?: string;
+  latency_ms?: number;
 }
