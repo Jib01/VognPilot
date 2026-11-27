@@ -35,7 +35,14 @@ async function run() {
   }
   console.log('✓ Public sample shelves verified');
 
-  // 3. Verify POST /api/v1/scan blocks spoofed HTML disguised as JPEG (0 Gemini tokens)
+  // 3. Verify quota status endpoint reports active backend & policy cleanly
+  const qRes = await fetch(`${baseUrl}/api/v1/quota`);
+  assert.equal(qRes.status, 200, `Expected 200 from /api/v1/quota, got ${qRes.status}`);
+  const qJson = await qRes.json();
+  assert.ok(qJson.quotas?.scan?.day?.limit > 0);
+  console.log(`✓ Quota inspection verified (backend=${qJson.quotaBackend}, dbConfigured=${qJson.dbConfigured})`);
+
+  // 4. Verify POST /api/v1/scan blocks spoofed HTML disguised as JPEG (0 Gemini tokens)
   const spoofedB64 = Buffer.from('<html><script>alert(1)</script></html>').toString('base64');
   const spoofRes = await fetch(`${baseUrl}/api/v1/scan`, {
     method: 'POST',
@@ -45,7 +52,7 @@ async function run() {
   assert.equal(spoofRes.status, 400, `Expected 400 for spoofed image, got ${spoofRes.status}`);
   console.log('✓ Spoofed image signature rejection (400) verified');
 
-  // 4. Verify SVG MIME is rejected (400)
+  // 5. Verify SVG MIME is rejected (400)
   const svgRes = await fetch(`${baseUrl}/api/v1/scan`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -54,29 +61,21 @@ async function run() {
   assert.equal(svgRes.status, 400, `Expected 400 for SVG MIME, got ${svgRes.status}`);
   console.log('✓ SVG MIME rejection (400) verified');
 
-  // 5. Verify cross-origin POST is blocked (403) on /scan and /ask
-  const crossScanRes = await fetch(`${baseUrl}/api/v1/scan`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      origin: 'https://evil-attacker.example',
-    },
-    body: JSON.stringify({ image: spoofedB64, mimeType: 'image/jpeg' }),
-  });
-  assert.equal(crossScanRes.status, 403, `Expected 403 for cross-origin /scan, got ${crossScanRes.status}`);
-
-  const crossAskRes = await fetch(`${baseUrl}/api/v1/ask`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      origin: 'https://evil-attacker.example',
-    },
-    body: JSON.stringify({ question: 'test' }),
-  });
-  assert.equal(crossAskRes.status, 403, `Expected 403 for cross-origin /ask, got ${crossAskRes.status}`);
+  // 6. Verify cross-origin POST is blocked (403) on /scan & /ask
+  for (const ep of ['/api/v1/scan', '/api/v1/ask']) {
+    const crossRes = await fetch(`${baseUrl}${ep}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        origin: 'https://evil-attacker.example',
+      },
+      body: JSON.stringify({ question: 'test', image: spoofedB64, mimeType: 'image/jpeg' }),
+    });
+    assert.equal(crossRes.status, 403, `Expected 403 for cross-origin ${ep}, got ${crossRes.status}`);
+  }
   console.log('✓ Cross-origin protection (403) on /scan & /ask verified');
 
-  // 6. Verify oversized payload (> 3MB) is rejected with 413
+  // 7. Verify oversized payload (> 3MB) is rejected with 413
   const hugeRes = await fetch(`${baseUrl}/api/v1/scan`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -85,7 +84,7 @@ async function run() {
   assert.equal(hugeRes.status, 413, `Expected 413 for oversized payload, got ${hugeRes.status}`);
   console.log('✓ Oversized payload limit (413) verified');
 
-  // 7. Verify unsupported Content-Type is rejected (415) and empty /ask question (400)
+  // 8. Verify unsupported Content-Type (415) and empty question (400)
   const ctRes = await fetch(`${baseUrl}/api/v1/scan`, {
     method: 'POST',
     headers: { 'content-type': 'text/plain' },

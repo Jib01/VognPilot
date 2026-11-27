@@ -17,6 +17,13 @@ import {
   validateImagePayload,
 } from '../src/lib/security.ts';
 
+import { getLimitsPolicy } from '../src/config/limits.ts';
+import {
+  consumeEndpointQuota,
+  getQuotaSnapshot,
+  resetQuotaMemoryForTests,
+} from '../src/lib/quota.ts';
+
 const VALID_JPEG_B64 = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]).toString('base64');
 const VALID_PNG_B64 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00]).toString('base64');
 const VALID_WEBP_B64 = Buffer.from('RIFF\x00\x00\x00\x00WEBP').toString('base64');
@@ -88,7 +95,7 @@ describe('Security Library Unit Tests', () => {
     assert.ok(safe.includes('[REDACTED'));
   });
 
-  it('enforces sliding-window rate limits, Retry-After header, and global daily cap', async () => {
+  it('enforces sliding-window rate limits, Retry-After header, and global daily cap', () => {
     const t0 = 1_000_000;
     for (let i = 0; i < 3; i++) {
       const r = checkSlidingRateLimit('scan:1.2.3.4', 3, 60_000, t0 + i * 100);
@@ -102,11 +109,9 @@ describe('Security Library Unit Tests', () => {
     assert.equal(resp.status, 429);
     assert.equal(resp.headers.get('retry-after'), String(blocked.retryAfterSeconds));
 
-    // After window slides past 60s, allowed again
     const recovered = checkSlidingRateLimit('scan:1.2.3.4', 3, 60_000, t0 + 61_000);
     assert.equal(recovered.allowed, true);
 
-    // Daily global cap
     assert.equal(checkDailyGlobalCap(2, t0), true);
     assert.equal(checkDailyGlobalCap(2, t0), true);
     assert.equal(checkDailyGlobalCap(2, t0), false);
@@ -130,6 +135,65 @@ describe('Security Library Unit Tests', () => {
       },
     });
     assert.equal(isAllowedOrigin(crossOriginReq), false);
+  });
+});
+
+describe('Multi-Window Quota Engine & Limits Policy Tests', () => {
+  beforeEach(() => {
+    resetQuotaMemoryForTests();
+    delete process.env.DATABASE_URL;
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    delete process.env.LIMIT_GUEST_SCAN_WINDOW;
+    delete process.env.LIMIT_GUEST_SCAN_HOUR;
+    delete process.env.LIMIT_GUEST_SCAN_DAY;
+    delete process.env.LIMIT_GUEST_SCAN_MONTH;
+    delete process.env.MAX_DAILY_SCANS;
+    delete process.env.LIMIT_SCHEDULE_ENABLED;
+  });
+
+  it('enforces configurable limits across window, hour, day, month, and global cap', async () => {
+    process.env.LIMIT_GUEST_SCAN_WINDOW = '2';
+    process.env.LIMIT_GUEST_SCAN_HOUR = '3';
+    process.env.LIMIT_GUEST_SCAN_DAY = '5';
+    process.env.LIMIT_GUEST_SCAN_MONTH = '10';
+    process.env.MAX_DAILY_SCANS = '4';
+
+    const policy = getLimitsPolicy();
+    assert.equal(policy.tiers.guest.scan.perWindow, 2);
+
+    const tBase = Date.UTC(2026, 10, 27, 12, 0, 0);
+
+    assert.equal((await consumeEndpointQuota('scan', 'guest', 'ip:1.1.1.1', tBase)).allowed, true);
+    assert.equal((await consumeEndpointQuota('scan', 'guest', 'ip:1.1.1.1', tBase + 1000)).allowed, true);
+
+    const winBlocked = await consumeEndpointQuota('scan', 'guest', 'ip:1.1.1.1', tBase + 2000);
+    assert.equal(winBlocked.allowed, false);
+    assert.equal(winBlocked.exceededPeriod, 'window');
+
+    const snap = await getQuotaSnapshot('scan', 'guest', 'ip:1.1.1.1', tBase + 2000);
+    assert.equal(snap.usage.window.limit, 2);
+    assert.equal(snap.usage.day.limit, 5);
+
+    assert.equal((await consumeEndpointQuota('scan', 'guest', 'ip:2.2.2.2', tBase + 3000)).allowed, true);
+    const globalBlocked = await consumeEndpointQuota('scan', 'guest', 'ip:2.2.2.2', tBase + 4000);
+    assert.equal(globalBlocked.allowed, false);
+    assert.equal(globalBlocked.exceededPeriod, 'global_day');
+  });
+
+  it('enforces optional UTC schedule restriction when enabled', async () => {
+    process.env.LIMIT_SCHEDULE_ENABLED = 'true';
+    process.env.LIMIT_SCHEDULE_START_UTC = '8';
+    process.env.LIMIT_SCHEDULE_END_UTC = '20';
+
+    const nightMs = Date.UTC(2026, 10, 27, 3, 0, 0);
+    const blocked = await consumeEndpointQuota('scan', 'guest', 'ip:9.9.9.9', nightMs);
+    assert.equal(blocked.allowed, false);
+    assert.equal(blocked.exceededPeriod, 'schedule');
+
+    const dayMs = Date.UTC(2026, 10, 27, 12, 0, 0);
+    const ok = await consumeEndpointQuota('scan', 'guest', 'ip:9.9.9.9', dayMs);
+    assert.equal(ok.allowed, true);
   });
 });
 

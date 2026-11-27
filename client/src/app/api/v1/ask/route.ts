@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  checkSlidingRateLimit,
   getClientIp,
   isAllowedOrigin,
   rateLimitResponse,
@@ -9,6 +8,7 @@ import {
   sanitizeUserText,
   validateImagePayload,
 } from '@/lib/security';
+import { consumeEndpointQuota } from '@/lib/quota';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -71,10 +71,10 @@ export async function POST(request: NextRequest) {
     validatedMime = check.normalizedMime;
   }
 
-  const clientIp = getClientIp(request);
-  const ipRate = checkSlidingRateLimit(`ask:${clientIp}`, 20, 10 * 60 * 1000);
-  if (!ipRate.allowed) {
-    return rateLimitResponse(ipRate.retryAfterSeconds, language);
+  const actorKey = `ip:${getClientIp(request)}`;
+  const quota = await consumeEndpointQuota('ask', 'guest', actorKey);
+  if (!quota.allowed) {
+    return rateLimitResponse(quota.retryAfterSeconds, language);
   }
 
   const rawApiKeys = (process.env.GEMINI_API_KEY || '').trim();
@@ -102,7 +102,7 @@ User dietary profile: ${dietary.length > 0 ? dietary.join(', ') : 'none'}.
 Detected shelf products: ${JSON.stringify(safeProducts)}.
 SHOPPER_QUESTION: "${question}"`;
 
-  const models = ['gemini-3.1-flash-lite', 'gemini-3-flash-preview', 'gemini-3.5-flash-lite'];
+  const models = ['gemini-3.1-flash-lite', 'gemini-3.5-flash-lite', 'gemini-3-flash-preview'];
   type GeminiPart = { text: string } | { inlineData: { mimeType: string; data: string } };
 
   for (const apiKey of apiKeys) {

@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ProductCard, ScanResult } from '@/types/vision';
 import {
-  checkDailyGlobalCap,
-  checkSlidingRateLimit,
   getClientIp,
   isAllowedOrigin,
   rateLimitResponse,
@@ -11,6 +9,7 @@ import {
   sanitizeUserText,
   validateImagePayload,
 } from '@/lib/security';
+import { consumeEndpointQuota } from '@/lib/quota';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -200,24 +199,26 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Per-IP sliding window limit (12 scans / 10 min) + global daily circuit breaker
-  const clientIp = getClientIp(request);
-  const ipRate = checkSlidingRateLimit(`scan:${clientIp}`, 12, 10 * 60 * 1000);
-  if (!ipRate.allowed) {
-    return rateLimitResponse(ipRate.retryAfterSeconds, language);
-  }
-
-  const maxDailyGlobal = Number(process.env.MAX_DAILY_SCANS || 500);
-  if (!checkDailyGlobalCap(maxDailyGlobal)) {
-    return NextResponse.json(
-      {
-        error_code: 'QUOTA_EXCEEDED',
-        message: language === 'it'
-          ? 'Limite giornaliero di sicurezza raggiunto. Usa la modalità Demo nell\'Aiuto.'
-          : 'Daily safety cap reached. Try the Demo Shelf inside Help.',
-      },
-      { status: 429 }
-    );
+  // Multi-window quota check (minutes, hour, day, month + global Free-Tier cap)
+  const actorKey = `ip:${getClientIp(request)}`;
+  const quota = await consumeEndpointQuota('scan', 'guest', actorKey);
+  if (!quota.allowed) {
+    if (quota.exceededPeriod === 'global_day' || quota.exceededPeriod === 'global_month' || quota.exceededPeriod === 'schedule') {
+      return NextResponse.json(
+        {
+          error_code: 'QUOTA_EXCEEDED',
+          exceeded_period: quota.exceededPeriod,
+          message: language === 'it'
+            ? 'Limite giornaliero gratuito raggiunto. Riprova più tardi o usa lo Scaffale Demo nell\'Aiuto.'
+            : 'Free daily capacity reached. Please retry later or try the Demo Shelf inside Help.',
+        },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(quota.retryAfterSeconds) },
+        }
+      );
+    }
+    return rateLimitResponse(quota.retryAfterSeconds, language);
   }
 
   const rawApiKeys = (process.env.GEMINI_API_KEY || '').trim();
@@ -239,7 +240,7 @@ export async function POST(request: NextRequest) {
   const targetLang = language === 'it' ? 'Italian' : 'English';
   const prompt = buildPrompt(targetLang, dietary, targetItem || undefined);
 
-  // Empirically benchmarked fast models with minimal thinking (avg 1-3s)
+  // Prioritize high-RPD Flash-Lite models (500 RPD, 15 RPM each) before 20-RPD Flash preview
   const ATTEMPTS = [
     {
       model: 'gemini-3.1-flash-lite',
@@ -253,6 +254,16 @@ export async function POST(request: NextRequest) {
       },
     },
     {
+      model: 'gemini-3.5-flash-lite',
+      timeoutMs: 7500,
+      genConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 900,
+        responseMimeType: 'application/json',
+        thinkingConfig: { thinkingLevel: 'minimal' },
+      },
+    },
+    {
       model: 'gemini-3-flash-preview',
       timeoutMs: 8500,
       genConfig: {
@@ -260,16 +271,6 @@ export async function POST(request: NextRequest) {
         maxOutputTokens: 900,
         responseMimeType: 'application/json',
         mediaResolution: 'MEDIA_RESOLUTION_MEDIUM',
-        thinkingConfig: { thinkingLevel: 'minimal' },
-      },
-    },
-    {
-      model: 'gemini-3.5-flash-lite',
-      timeoutMs: 7000,
-      genConfig: {
-        temperature: 0.1,
-        maxOutputTokens: 900,
-        responseMimeType: 'application/json',
         thinkingConfig: { thinkingLevel: 'minimal' },
       },
     },
@@ -415,7 +416,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Never leak raw upstream errors or secrets to clients
   return NextResponse.json(
     {
       error_code: 'SCAN_FAILED',
