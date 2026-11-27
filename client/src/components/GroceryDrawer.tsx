@@ -141,7 +141,7 @@ export default function GroceryDrawer({ isOpen, onClose, language = 'en', primar
             </div>
             <div>
               <h2 className="text-xl font-extrabold text-zinc-100 tracking-tight leading-none">{t.shoppingList}</h2>
-              <p className="text-[11px] text-zinc-400 mt-1 font-medium">{items.length} {language === 'it' ? 'articoli' : 'items'}</p>
+              <p className="text-[11px] text-zinc-400 mt-1 font-medium">{items.length} {language === 'it' ? 'articoli' : language === 'da' ? 'varer' : 'items'}</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 bg-zinc-800 rounded-full active:scale-95 text-zinc-400 hover:text-white transition-colors">
@@ -315,7 +315,7 @@ export default function GroceryDrawer({ isOpen, onClose, language = 'en', primar
             {/* Quick Presets */}
             <div>
               <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-2">
-                {language === 'it' ? 'Preset Rapidi' : 'Quick Presets'}
+                {language === 'it' ? 'Preset Rapidi' : language === 'da' ? 'Hurtige Valg' : 'Quick Presets'}
               </label>
               <div className="grid grid-cols-4 gap-2">
                 {[100, 200, 300, 500].map((preset) => (
@@ -337,7 +337,7 @@ export default function GroceryDrawer({ isOpen, onClose, language = 'en', primar
             {/* Custom Budget Input */}
             <div>
               <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">
-                {language === 'it' ? 'Valore Target' : 'Target Amount'}
+                {language === 'it' ? 'Valore Target' : language === 'da' ? 'Målbeløb' : 'Target Amount'}
               </label>
               <div className="flex items-center bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 focus-within:border-emerald-500 transition-colors">
                 <input 

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { HelpCircle, X, Camera, ShoppingCart, Settings as SettingsIcon, Sparkles } from 'lucide-react';
+import type { Language } from '../lib/translations';
 
 interface TutorialSlide {
   icon: React.ReactNode;
@@ -9,54 +10,113 @@ interface TutorialSlide {
   description: string;
 }
 
-const getSlides = (isIt: boolean): TutorialSlide[] => [
-  {
-    icon: (
-      <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/60 dark:border-emerald-800/60 flex items-center justify-center">
-        <Camera className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
-      </div>
-    ),
-    title: isIt ? "Inquadra e Scatta" : "Point & Scan",
-    description: isIt
-      ? 'Tocca "Scatta Foto" e inquadra un prodotto o lo scaffale. Funziona sia con un singolo cartellino che con più articoli.'
-      : 'Tap "Take Photo" and point your camera at any shelf or price tag. Works with 1 item or an entire shelf section.',
-  },
-  {
-    icon: (
-      <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/60 dark:border-emerald-800/60 flex items-center justify-center">
-        <ShoppingCart className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
-      </div>
-    ),
-    title: isIt ? "Risultati Istantanei" : "Get Results Instantly",
-    description: isIt
-      ? "In 2–3 secondi vedrai i nomi tradotti dal danese, i prezzi in corone (DKK) ed Euro, il deposito Pant e i bollini dietetici."
-      : "In 2–3 seconds you'll see translated product names, DKK and EUR prices, Pant deposits, and dietary tags like Organic or Lactose-Free.",
-  },
-  {
-    icon: (
-      <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/60 dark:border-emerald-800/60 flex items-center justify-center">
-        <SettingsIcon className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
-      </div>
-    ),
-    title: isIt ? "Budget e Preferenze" : "Track & Personalise",
-    description: isIt
-      ? 'Aggiungi i prodotti al carrello per non sforare il budget. Nelle Impostazioni puoi indicare intolleranze o preferenze bio/vegane.'
-      : 'Tap "Add to Cart" to track your spend against your budget. In Settings you can set dietary preferences so matching products are highlighted automatically.',
-  },
-];
+const getSlides = (lang: Language): TutorialSlide[] => {
+  if (lang === 'it') {
+    return [
+      {
+        icon: (
+          <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/60 dark:border-emerald-800/60 flex items-center justify-center">
+            <Camera className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
+          </div>
+        ),
+        title: "Inquadra e Scatta",
+        description: 'Tocca "Scatta Foto" e inquadra da vicino (30–50 cm) un prodotto o un ripiano. Funziona con 1–4 articoli per volta.',
+      },
+      {
+        icon: (
+          <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/60 dark:border-emerald-800/60 flex items-center justify-center">
+            <ShoppingCart className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
+          </div>
+        ),
+        title: "Risultati Istantanei",
+        description: "In 2–3 secondi vedrai i nomi tradotti dal danese, prezzi in DKK/EUR, costo al kg/L, deposito Pant e allergeni.",
+      },
+      {
+        icon: (
+          <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/60 dark:border-emerald-800/60 flex items-center justify-center">
+            <SettingsIcon className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
+          </div>
+        ),
+        title: "Budget e Preferenze",
+        description: 'Aggiungi i prodotti al carrello per non sforare il budget e imposta filtri rapidi bio, vegani, senza lattosio o glutine.',
+      },
+    ];
+  }
+
+  if (lang === 'da') {
+    return [
+      {
+        icon: (
+          <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/60 dark:border-emerald-800/60 flex items-center justify-center">
+            <Camera className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
+          </div>
+        ),
+        title: "Peg & Scan",
+        description: 'Tryk "Tag Billede" og hold kameraet 30–50 cm fra skiltene. Virker bedst med 1–4 varer ad gangen.',
+      },
+      {
+        icon: (
+          <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/60 dark:border-emerald-800/60 flex items-center justify-center">
+            <ShoppingCart className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
+          </div>
+        ),
+        title: "Resultater med det samme",
+        description: "På 2–3 sekunder får du priser i DKK/EUR, reel kilopris, pant og hurtige kostmærker.",
+      },
+      {
+        icon: (
+          <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/60 dark:border-emerald-800/60 flex items-center justify-center">
+            <SettingsIcon className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
+          </div>
+        ),
+        title: "Styr dit budget",
+        description: 'Læg varer i kurven med live +/- knapper og brug hurtige kostfiltre til økologi, vegansk eller laktosefri.',
+      },
+    ];
+  }
+
+  return [
+    {
+      icon: (
+        <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/60 dark:border-emerald-800/60 flex items-center justify-center">
+          <Camera className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
+        </div>
+      ),
+      title: "Point & Scan",
+      description: 'Tap "Take Photo" and frame 1–4 items closely (30–50 cm) so price tags stay crisp and readable.',
+    },
+    {
+      icon: (
+        <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/60 dark:border-emerald-800/60 flex items-center justify-center">
+          <ShoppingCart className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
+        </div>
+      ),
+      title: "Instant Comparison",
+      description: "In 2–3 seconds you get translated names, DKK/EUR prices, unit price per kg/L, Pant deposits, and dietary tags.",
+    },
+    {
+      icon: (
+        <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/60 dark:border-emerald-800/60 flex items-center justify-center">
+          <SettingsIcon className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
+        </div>
+      ),
+      title: "Track & Personalise",
+      description: 'Use live +/- steppers right on scan cards, manage your checklist, and filter allergens automatically.',
+    },
+  ];
+};
 
 interface TutorialModalProps {
   isOpen: boolean;
   onClose: () => void;
   onTryDemo?: () => void;
-  language?: 'en' | 'it';
+  language?: Language;
 }
 
 export default function TutorialModal({ isOpen, onClose, onTryDemo, language = 'en' }: TutorialModalProps) {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
-  const isIt = language === 'it';
-  const slides = getSlides(isIt);
+  const slides = getSlides(language);
 
   useEffect(() => {
     if (!isOpen) setCurrentSlide(0);
@@ -80,13 +140,19 @@ export default function TutorialModal({ isOpen, onClose, onTryDemo, language = '
 
   if (!isOpen) return null;
 
+  const labels =
+    language === 'it'
+      ? { header: 'Come funziona', skip: 'Salta', next: 'Avanti →', gotIt: 'Ho capito', demo: '⚡ Prova Scaffale Demo' }
+      : language === 'da'
+      ? { header: 'Sådan virker det', skip: 'Spring over', next: 'Næste →', gotIt: 'Forstået', demo: '⚡ Prøv Demohylde' }
+      : { header: 'How it works', skip: 'Skip', next: 'Next →', gotIt: 'Got it', demo: '⚡ Try Demo Shelf' };
+
   return (
     <div className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="w-full max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 duration-250 text-zinc-900 dark:text-zinc-100 transition-colors">
-        {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-2">
           <span className="text-xs font-bold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
-            {isIt ? "Come funziona" : "How it works"}
+            {labels.header}
           </span>
           <button
             onClick={onClose}
@@ -97,7 +163,6 @@ export default function TutorialModal({ isOpen, onClose, onTryDemo, language = '
           </button>
         </div>
 
-        {/* Slides */}
         <div
           className="px-6 pb-6 pt-4"
           onTouchStart={handleTouchStart}
@@ -115,7 +180,6 @@ export default function TutorialModal({ isOpen, onClose, onTryDemo, language = '
             </div>
           </div>
 
-          {/* Dot indicators */}
           <div className="flex justify-center gap-2 mt-6 mb-5">
             {slides.map((_, i) => (
               <button
@@ -129,14 +193,13 @@ export default function TutorialModal({ isOpen, onClose, onTryDemo, language = '
             ))}
           </div>
 
-          {/* Actions */}
           <div className="flex gap-3">
             {!isLast && (
               <button
                 onClick={onClose}
                 className="flex-1 py-3 rounded-xl text-sm font-semibold text-zinc-700 dark:text-zinc-400 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 active:scale-95 transition-all"
               >
-                {isIt ? "Salta" : "Skip"}
+                {labels.skip}
               </button>
             )}
             <button
@@ -146,11 +209,10 @@ export default function TutorialModal({ isOpen, onClose, onTryDemo, language = '
               }}
               className="flex-1 py-3 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-500 active:scale-95 transition-all shadow-md"
             >
-              {isLast ? (isIt ? "Ho capito" : "Got it") : (isIt ? "Avanti →" : "Next →")}
+              {isLast ? labels.gotIt : labels.next}
             </button>
           </div>
 
-          {/* Try Demo Shelf - inside Help under Skip/Next */}
           {onTryDemo && (
             <div className="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800/80">
               <button
@@ -161,7 +223,7 @@ export default function TutorialModal({ isOpen, onClose, onTryDemo, language = '
                 className="w-full py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 dark:bg-emerald-950/80 dark:hover:bg-emerald-900 dark:border-emerald-700/60 dark:text-emerald-300 font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-xs"
               >
                 <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                <span>{isIt ? "⚡ Prova Scaffale Demo" : "⚡ Try Demo Shelf"}</span>
+                <span>{labels.demo}</span>
               </button>
             </div>
           )}
@@ -171,7 +233,6 @@ export default function TutorialModal({ isOpen, onClose, onTryDemo, language = '
   );
 }
 
-// Small trigger button to embed in the header
 export function HelpButton({ onClick }: { onClick: () => void }) {
   return (
     <button

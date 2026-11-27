@@ -22,6 +22,7 @@ import {
   ListChecks,
   Check,
   Copy,
+  ChevronDown,
 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ScanResult, ProductCard } from '../types/vision';
@@ -30,7 +31,7 @@ import { useSyncEngine } from '../hooks/useSync';
 import { ScanResultSheet } from './ScanResultSheet';
 import SettingsModal, { UserPreferences } from './SettingsModal';
 import TutorialModal, { HelpButton } from './TutorialModal';
-import { getTranslation } from '../lib/translations';
+import { getTranslation, Language } from '../lib/translations';
 
 const DEFAULT_PREFERENCES: UserPreferences = {
   theme: "system",
@@ -57,7 +58,7 @@ interface RecentScanEntry {
 }
 
 interface ErrorModalState {
-  code: 'TIMEOUT_TOO_DENSE' | 'NO_PRODUCTS_FOUND' | 'QUOTA_EXCEEDED' | 'AUTH_ERROR' | 'NETWORK_ERROR' | 'SERVER_ERROR';
+  code: 'TIMEOUT_TOO_DENSE' | 'SHELF_TOO_DENSE' | 'IMAGE_BLURRY' | 'NO_PRODUCTS_FOUND' | 'QUOTA_EXCEEDED' | 'AUTH_ERROR' | 'NETWORK_ERROR' | 'SERVER_ERROR';
   title: string;
   message: string;
 }
@@ -118,7 +119,8 @@ export default function CameraScanner() {
       }
       try {
         const savedTheme = localStorage.getItem('vognpilot_theme') as 'dark' | 'light' | 'system' | null;
-        const savedLang = localStorage.getItem('vognpilot_language') as 'en' | 'it' | null;
+        const rawLang = localStorage.getItem('vognpilot_language');
+        const savedLang: Language | null = rawLang === 'it' || rawLang === 'da' || rawLang === 'en' ? rawLang : null;
         const savedCurrency = localStorage.getItem('vognpilot_currency') as 'DKK' | 'EUR' | null;
         const savedDietary = localStorage.getItem('vognpilot_dietary');
         if (savedTheme || savedLang || savedCurrency || savedDietary) {
@@ -212,7 +214,15 @@ export default function CameraScanner() {
     }
   };
 
-  // Compress image to max 896px with 0.72 JPEG quality for sharp price-tag OCR & fast upload
+  const handleQuickLanguageChange = (language: Language) => {
+    const updated: UserPreferences = { ...preferences, language };
+    setPreferences(updated);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('vognpilot_language', language);
+    }
+  };
+
+  // Compress image to max 1024px with 0.76 JPEG quality for sharp crowded-shelf & small price-tag OCR
   const compressImage = (blob: Blob): Promise<string> =>
     new Promise((resolve, reject) => {
       const img = new Image();
@@ -221,7 +231,7 @@ export default function CameraScanner() {
         URL.revokeObjectURL(url);
         const canvas = document.createElement('canvas');
         let { width, height } = img;
-        const max = 896;
+        const max = 1024;
         if (width > height && width > max) {
           height = (height * max) / width;
           width = max;
@@ -240,9 +250,9 @@ export default function CameraScanner() {
           return;
         }
         ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'medium';
+        ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.72));
+        resolve(canvas.toDataURL('image/jpeg', 0.76));
       };
       img.onerror = reject;
       img.src = url;
@@ -338,7 +348,11 @@ export default function CameraScanner() {
   const handleStructuredError = (code: string, serverMsg?: string) => {
     switch (code) {
       case 'TIMEOUT_TOO_DENSE':
-        setErrorModal({ code: 'TIMEOUT_TOO_DENSE', title: t.errorTimeoutTitle, message: t.errorTimeoutMsg });
+      case 'SHELF_TOO_DENSE':
+        setErrorModal({ code: 'SHELF_TOO_DENSE', title: t.errorTimeoutTitle, message: serverMsg || t.errorTimeoutMsg });
+        break;
+      case 'IMAGE_BLURRY':
+        setErrorModal({ code: 'IMAGE_BLURRY', title: t.errorBlurryTitle, message: serverMsg || t.errorBlurryMsg });
         break;
       case 'NO_PRODUCTS_FOUND':
         setErrorModal({ code: 'NO_PRODUCTS_FOUND', title: t.errorNoProductsTitle, message: t.errorNoProductsMsg });
@@ -363,7 +377,14 @@ export default function CameraScanner() {
       executeScan(base64, previewUrl);
     } catch (err) {
       console.error('[Scanner] Image prep failed:', err);
-      handleStructuredError('NETWORK_ERROR', preferences.language === 'it' ? 'Impossibile leggere il file immagine.' : 'Could not read image file.');
+      handleStructuredError(
+        'NETWORK_ERROR',
+        preferences.language === 'it'
+          ? 'Impossibile leggere il file immagine.'
+          : preferences.language === 'da'
+          ? 'Kunne ikke læse billedfilen.'
+          : 'Could not read image file.'
+      );
     }
   };
 
@@ -391,22 +412,23 @@ export default function CameraScanner() {
     setImageUri('/samples/sample-dairy.jpg');
 
     setTimeout(() => {
-      const isIt = preferences.language === 'it';
+      const lang = preferences.language;
+      const tr = (en: string, da: string, it: string) => (lang === 'it' ? it : lang === 'da' ? da : en);
       const demoResult: ScanResult = {
         is_demo_fallback: true,
         notice: t.demoShelfNotice,
-        copilot_tip: isIt
-          ? "Arla Bio (14.50 kr/L) rispetta i filtri bio ed è il più conveniente rispetto alle alternative."
-          : "Arla Organic (14.50 kr/L) matches organic preferences and offers the best daily value.",
-        decision_reason: isIt
-          ? "Arla Bio (14.50 kr/L) offre il miglior equilibrio tra prezzo/litro e qualità biologica."
-          : "Arla Organic (14.50 kr/L) offers the best price-per-liter and organic certification.",
+        copilot_tip: tr(
+          "Arla Organic (14.50 kr/L) matches organic preferences and offers the best daily value.",
+          "Arla Økologisk (14.50 kr/L) passer til økologi og giver bedst værdi i hverdagen.",
+          "Arla Bio (14.50 kr/L) rispetta i filtri bio ed è il più conveniente rispetto alle alternative."
+        ),
+        decision_reason: null,
         is_blurry_or_obscured: false,
         recommended_product_index: 0,
         latency_ms: 250,
         detected_products: [
           {
-            label: isIt ? "Arla Latte Parzialmente Scremato Bio 1L" : "Arla Organic Semi-Skimmed Milk 1L",
+            label: tr("Arla Organic Semi-Skimmed Milk 1L", "Arla Økologisk Letmælk 1L", "Arla Latte Parzialmente Scremato Bio 1L"),
             danish_term: "Arla Økologisk Letmælk 1L",
             package_price_dkk: 14.50,
             unit_price_dkk: 14.50,
@@ -422,14 +444,14 @@ export default function CameraScanner() {
             is_gluten_free: true,
             matches_constraints: !preferences.dietary.lactoseFree && !preferences.dietary.vegan,
             dietary_warning: preferences.dietary.lactoseFree
-              ? (isIt ? "Contiene lattosio" : "Contains lactose")
+              ? tr("Contains lactose", "Indeholder laktose", "Contiene lattosio")
               : preferences.dietary.vegan
-              ? (isIt ? "Non vegano" : "Not vegan")
+              ? tr("Not vegan", "Ikke vegansk", "Non vegano")
               : null,
-            summary: isIt ? "Latte fresco biologico danese ricco di calcio" : "Danish fresh organic semi-skimmed milk",
+            summary: tr("Danish fresh organic semi-skimmed milk", "Frisk dansk økologisk letmælk", "Latte fresco biologico danese ricco di calcio"),
           },
           {
-            label: isIt ? "Faxe Kondi Soda Limone/Lime 33cl" : "Faxe Kondi Lemon/Lime Soda 330ml",
+            label: tr("Faxe Kondi Lemon/Lime Soda 330ml", "Faxe Kondi Sodavand 33cl", "Faxe Kondi Soda Limone/Lime 33cl"),
             danish_term: "Faxe Kondi 33cl",
             package_price_dkk: 8.50,
             unit_price_dkk: 25.75,
@@ -445,10 +467,10 @@ export default function CameraScanner() {
             is_gluten_free: true,
             matches_constraints: !preferences.dietary.organic,
             dietary_warning: null,
-            summary: isIt ? "Classica bevanda danese agli agrumi con Pant A (+1 kr)" : "Classic Danish lemon soda with returnable Pant A (+1 kr)",
+            summary: tr("Classic Danish lemon soda with returnable Pant A (+1 kr)", "Klassisk dansk sodavand med Pant A (+1 kr)", "Classica bevanda danese agli agrumi con Pant A (+1 kr)"),
           },
           {
-            label: isIt ? "Pågen Girelle alla Cannella 260g" : "Pågen Cinnamon Swirls 260g",
+            label: tr("Pågen Cinnamon Swirls 260g", "Pågen Gifflar Kanel 260g", "Pågen Girelle alla Cannella 260g"),
             danish_term: "Pågen Gifflar Kanel 260g",
             package_price_dkk: 22.00,
             unit_price_dkk: 84.60,
@@ -464,12 +486,12 @@ export default function CameraScanner() {
             is_gluten_free: false,
             matches_constraints: !preferences.dietary.glutenFree && !preferences.dietary.vegan,
             dietary_warning: preferences.dietary.glutenFree
-              ? (isIt ? "Contiene glutine" : "Contains gluten")
+              ? tr("Contains gluten", "Indeholder gluten", "Contiene glutine")
               : null,
-            summary: isIt ? "Dolcetti nordici alla cannella ideali per la colazione" : "Iconic Nordic cinnamon mini pastry rolls",
+            summary: tr("Iconic Nordic cinnamon mini pastry rolls", "Klassiske nordiske kanelsnegle", "Dolcetti nordici alla cannella ideali per la colazione"),
           },
           {
-            label: isIt ? "Lurpak Burro Salato Spalmabile 200g" : "Lurpak Salted Spreadable Butter 200g",
+            label: tr("Lurpak Salted Spreadable Butter 200g", "Lurpak Smørbar 200g", "Lurpak Burro Salato Spalmabile 200g"),
             danish_term: "Lurpak Smørbar 200g",
             package_price_dkk: 26.95,
             unit_price_dkk: 134.75,
@@ -485,9 +507,9 @@ export default function CameraScanner() {
             is_gluten_free: true,
             matches_constraints: !preferences.dietary.lactoseFree && !preferences.dietary.vegan,
             dietary_warning: preferences.dietary.lactoseFree
-              ? (isIt ? "Contiene lattosio" : "Contains lactose")
+              ? tr("Contains lactose", "Indeholder laktose", "Contiene lattosio")
               : null,
-            summary: isIt ? "Autentico burro salato spalmabile danese da panna fresca" : "Authentic Danish churned salted spreadable butter",
+            summary: tr("Authentic Danish churned salted spreadable butter", "Klassisk dansk smørbar med salt", "Autentico burro salato spalmabile danese da panna fresca"),
           },
         ],
       };
@@ -661,7 +683,7 @@ export default function CameraScanner() {
       for (const item of inCartItems) {
         const qty = item.quantity || 1;
         const rowTotal = ((item.price_dkk || 0) + (item.pant_fee_dkk || 0)) * qty;
-        lines.push(`• ${qty}x ${item.name} — ${rowTotal.toFixed(2)} kr`);
+        lines.push(`• ${qty}x ${item.name} — ${rowTotal > 0 ? formatCartPrice(rowTotal) : t.noPriceYet}`);
       }
     }
     if (todoItems.length > 0) {
@@ -716,18 +738,33 @@ export default function CameraScanner() {
       <input ref={galleryInputRef} type="file" accept="image/*" className="hidden" onChange={handleCapture} />
 
       {/* ─── HEADER ─── */}
-      <header className="h-14 w-full px-4 z-50 flex justify-between items-center bg-white/95 dark:bg-[#0b0b0e]/95 backdrop-blur-md border-b border-zinc-200 dark:border-white/10 shrink-0">
-        <div className="flex items-center gap-2.5 cursor-pointer whitespace-nowrap flex-shrink-0" onClick={resetToScanHome}>
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center shadow-sm">
+      <header className="h-14 w-full px-3 sm:px-4 z-50 flex justify-between items-center gap-2 bg-white/95 dark:bg-[#0b0b0e]/95 backdrop-blur-md border-b border-zinc-200 dark:border-white/10 shrink-0">
+        <div className="flex items-center gap-2 cursor-pointer min-w-0" onClick={resetToScanHome}>
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center shadow-sm shrink-0">
             <span className="text-white font-black text-base leading-none">V</span>
           </div>
-          <div>
-            <h1 className="font-extrabold text-base tracking-tight text-zinc-900 dark:text-zinc-100 leading-none">VognPilot</h1>
-            <p className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 leading-none mt-0.5">{t.appTagline}</p>
+          <div className="min-w-0">
+            <h1 className="font-extrabold text-base tracking-tight text-zinc-900 dark:text-zinc-100 leading-none truncate">VognPilot</h1>
+            <p className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 leading-none mt-0.5 truncate">{t.appTagline}</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 whitespace-nowrap flex-shrink-0">
+        <div className="flex items-center gap-1 sm:gap-1.5 whitespace-nowrap flex-shrink-0">
+          {/* Compact Mobile Language Switcher */}
+          <div className="relative flex-shrink-0">
+            <select
+              value={preferences.language}
+              onChange={(e) => handleQuickLanguageChange(e.target.value as Language)}
+              aria-label={t.language}
+              className="appearance-none h-8 pl-2 pr-5 rounded-xl text-[11px] font-extrabold uppercase tracking-wide bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800/80 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700/80 cursor-pointer focus:outline-none focus:border-emerald-500 transition-colors"
+            >
+              <option value="en">EN</option>
+              <option value="da">DA</option>
+              <option value="it">IT</option>
+            </select>
+            <ChevronDown className="w-3 h-3 text-zinc-500 dark:text-zinc-400 pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2" />
+          </div>
+
           <HelpButton onClick={() => setIsTutorialOpen(true)} />
 
           <button
@@ -744,7 +781,7 @@ export default function CameraScanner() {
           {/* Header Cart Button -> always switches to Cart Tab */}
           <button
             onClick={() => setActiveTab('cart')}
-            className={`px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-extrabold flex-shrink-0 active:scale-95 transition-all cursor-pointer border shadow-xs ${
+            className={`px-2 sm:px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-extrabold flex-shrink-0 active:scale-95 transition-all cursor-pointer border shadow-xs ${
               activeTab === 'cart'
                 ? 'bg-emerald-600 text-white border-emerald-600'
                 : 'bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100'
@@ -778,8 +815,8 @@ export default function CameraScanner() {
                   : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400'
               }`}>
                 {isOverBudget
-                  ? `+${(totalDKK - budgetTarget).toFixed(0)} kr ${t.overBudget}`
-                  : `${remainingBudget.toFixed(0)} kr ${t.remaining}`}
+                  ? `+${preferences.currency === 'EUR' ? `€${((totalDKK - budgetTarget) / 7.46).toFixed(1)}` : `${(totalDKK - budgetTarget).toFixed(0)} kr`} ${t.overBudget}`
+                  : `${preferences.currency === 'EUR' ? `€${(remainingBudget / 7.46).toFixed(1)}` : `${remainingBudget.toFixed(0)} kr`} ${t.remaining}`}
               </span>
             </div>
 
@@ -1207,7 +1244,7 @@ export default function CameraScanner() {
                           )}
 
                           {pantFee > 0 ? (
-                            <span className="text-[10px] text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-1.5 py-0.5 rounded font-semibold">+{pantFee} {t.returnable}</span>
+                            <span className="text-[10px] text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-1.5 py-0.5 rounded font-semibold">+{pantFee} kr {t.returnable}</span>
                           ) : null}
                         </div>
                       </div>
@@ -1223,7 +1260,7 @@ export default function CameraScanner() {
                 <div className="pt-2.5 pb-1 px-1 border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center text-xs text-zinc-500 dark:text-zinc-400">
                   <span>{typeof t.itemCount === 'function' ? t.itemCount(inCartItems.length) : `${inCartItems.length} items`}</span>
                   <div className="text-right">
-                    {pantTotalDKK > 0 ? <span className="block text-emerald-600 dark:text-emerald-400 font-semibold">+{pantTotalDKK.toFixed(2)} kr Pant</span> : null}
+                    {pantTotalDKK > 0 ? <span className="block text-emerald-600 dark:text-emerald-400 font-semibold">+{formatCartPrice(pantTotalDKK)} {t.returnable}</span> : null}
                     <span className="font-extrabold text-zinc-900 dark:text-zinc-100 text-sm">
                       {preferences.currency === 'EUR' ? `≈ €${(totalDKK / 7.46).toFixed(2)}` : `${totalDKK.toFixed(2)} kr`}
                     </span>
@@ -1341,7 +1378,7 @@ export default function CameraScanner() {
               {errorModal.message}
             </p>
             <div className="w-full flex flex-col gap-2.5">
-              {errorModal.code === 'TIMEOUT_TOO_DENSE' && (
+              {(errorModal.code === 'TIMEOUT_TOO_DENSE' || errorModal.code === 'SHELF_TOO_DENSE') && (
                 <button
                   onClick={() => { setErrorModal(null); cameraInputRef.current?.click(); }}
                   className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all text-sm shadow-md"
@@ -1350,7 +1387,7 @@ export default function CameraScanner() {
                 </button>
               )}
 
-              {errorModal.code === 'NO_PRODUCTS_FOUND' && (
+              {(errorModal.code === 'NO_PRODUCTS_FOUND' || errorModal.code === 'IMAGE_BLURRY') && (
                 <button
                   onClick={() => { setErrorModal(null); cameraInputRef.current?.click(); }}
                   className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all text-sm shadow-md"

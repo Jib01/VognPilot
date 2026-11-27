@@ -58,7 +58,7 @@ export function ScanResultSheet({
   const [askError, setAskError] = useState<string | null>(null);
 
   const formatPrice = (dkk: number | null | undefined) => {
-    if (dkk == null) return null;
+    if (dkk == null || dkk <= 0) return null;
     const eur = convertDKKtoEUR(dkk);
     if (primaryCurrency === 'EUR') {
       return { primary: `€${eur}`, secondary: `${dkk.toFixed(2)} kr` };
@@ -107,7 +107,13 @@ export function ScanResultSheet({
         setAiAnswer(data.answer);
       }
     } catch {
-      setAskError(language === 'it' ? 'Richiesta scaduta, riprova.' : 'Request timed out, please retry.');
+      setAskError(
+        language === 'it'
+          ? 'Richiesta scaduta, riprova.'
+          : language === 'da'
+          ? 'Forespørgslen fik timeout, prøv igen.'
+          : 'Request timed out, please retry.'
+      );
     } finally {
       setAskLoading(false);
     }
@@ -143,8 +149,8 @@ export function ScanResultSheet({
               </span>
             ) : null}
           </div>
-          {Boolean(scan.decision_reason) && hasProducts ? (
-            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 line-clamp-2">{scan.decision_reason}</p>
+          {Boolean(scan.decision_reason) && scan.decision_reason !== scan.copilot_tip && hasProducts ? (
+            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 line-clamp-1">{scan.decision_reason}</p>
           ) : null}
         </div>
         <button
@@ -162,7 +168,11 @@ export function ScanResultSheet({
         <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">
           <p className="text-zinc-600 dark:text-zinc-400 text-sm leading-relaxed max-w-xs">
             {Boolean(scan.is_blurry_or_obscured)
-              ? (language === 'it' ? "L'immagine è poco nitida o non contiene prodotti leggibili. Inquadra da più vicino." : "The photo was too blurry or products were hard to read. Move a bit closer and try again.")
+              ? (language === 'it'
+                ? "L'immagine è poco nitida o non contiene prodotti leggibili. Inquadra da più vicino."
+                : language === 'da'
+                ? "Billedet er for sløret eller varerne kan ikke læses tydeligt. Gå tættere på og prøv igen."
+                : "The photo was too blurry or products were hard to read. Move a bit closer and try again.")
               : t.tryCloser}
           </p>
           <button
@@ -175,7 +185,7 @@ export function ScanResultSheet({
         </div>
       ) : null}
 
-      {/* Product cards + Copilot Ask AI */}
+      {/* Product cards + VognPilot Ask AI */}
       {hasProducts ? (
         <div className="flex-1 overflow-y-auto hide-scrollbar px-3 py-3 space-y-3 pb-24">
           {Boolean(scan.copilot_tip || scan.decision_reason) ? (
@@ -267,7 +277,13 @@ export function ScanResultSheet({
                           <p className="text-[10px] text-zinc-500 dark:text-zinc-400 font-semibold">+{pantFee} kr {t.returnable}</p>
                         ) : null}
                       </div>
-                    ) : null}
+                    ) : (
+                      <div className="text-right flex-shrink-0">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800/50">
+                          {t.priceUnreadable}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Tags row */}
@@ -377,7 +393,7 @@ export function ScanResultSheet({
             );
           })}
 
-          {/* Interactive Copilot Follow-Up ("Ask AI about this shelf") */}
+          {/* Interactive VognPilot Follow-Up ("Ask AI about this shelf") */}
           {!scan.is_demo_fallback ? (
             <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3.5 space-y-2.5">
               <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-200">

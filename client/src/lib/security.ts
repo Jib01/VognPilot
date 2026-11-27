@@ -130,7 +130,9 @@ export function isAllowedOrigin(request: Request): boolean {
 export function validateImagePayload(
   base64: string,
   mimeType: string
-): { valid: true; normalizedMime: string } | { valid: false; status: number; code: string; messageEn: string; messageIt: string } {
+):
+  | { valid: true; normalizedMime: string }
+  | { valid: false; status: number; code: string; messageEn: string; messageDa: string; messageIt: string } {
   const cleanMime = (mimeType || 'image/jpeg').toLowerCase().trim();
   if (!ALLOWED_IMAGE_MIME_TYPES.has(cleanMime)) {
     return {
@@ -138,6 +140,7 @@ export function validateImagePayload(
       status: 400,
       code: 'INVALID_MIME',
       messageEn: 'Unsupported image format. Use JPEG, PNG, or WebP.',
+      messageDa: 'Billedformat understøttes ikke. Brug JPEG, PNG eller WebP.',
       messageIt: 'Formato immagine non supportato. Usa JPEG, PNG o WebP.',
     };
   }
@@ -148,6 +151,7 @@ export function validateImagePayload(
       status: 400,
       code: 'NO_IMAGE',
       messageEn: 'No image provided.',
+      messageDa: 'Intet billede modtaget.',
       messageIt: 'Nessuna immagine fornita.',
     };
   }
@@ -158,6 +162,7 @@ export function validateImagePayload(
       status: 413,
       code: 'PAYLOAD_TOO_LARGE',
       messageEn: 'Image file is too large (max 3 MB).',
+      messageDa: 'Billedfilen er for stor (maks. 3 MB).',
       messageIt: 'Immagine troppo pesante (massimo 3 MB).',
     };
   }
@@ -173,6 +178,7 @@ export function validateImagePayload(
       status: 400,
       code: 'INVALID_IMAGE',
       messageEn: 'Corrupted image data.',
+      messageDa: 'Ødelagte billeddata.',
       messageIt: 'Dati immagine non validi.',
     };
   }
@@ -183,6 +189,7 @@ export function validateImagePayload(
       status: 400,
       code: 'INVALID_IMAGE',
       messageEn: 'Image payload too small or invalid.',
+      messageDa: 'Billedet er for lille eller ugyldigt.',
       messageIt: 'Immagine troppo piccola o non valida.',
     };
   }
@@ -204,6 +211,7 @@ export function validateImagePayload(
       status: 400,
       code: 'INVALID_IMAGE_SIGNATURE',
       messageEn: 'File content does not match a valid JPEG, PNG, or WebP image.',
+      messageDa: 'Filindholdet matcher ikke et gyldigt JPEG-, PNG- eller WebP-billede.',
       messageIt: 'Il contenuto del file non corrisponde a un\'immagine JPEG, PNG o WebP valida.',
     };
   }
@@ -245,14 +253,18 @@ export function redactSecrets(message: string): string {
     .replace(/([?&]key=)[^&\s]+/gi, '$1[REDACTED]');
 }
 
-export function rateLimitResponse(retryAfterSeconds: number, language: 'en' | 'it') {
+export function rateLimitResponse(retryAfterSeconds: number, language: 'en' | 'da' | 'it') {
+  const message =
+    language === 'it'
+      ? `Troppe richieste. Riprova tra ${retryAfterSeconds} secondi.`
+      : language === 'da'
+      ? `For mange forespørgsler. Prøv igen om ${retryAfterSeconds} sekunder.`
+      : `Too many requests. Please retry in ${retryAfterSeconds} seconds.`;
+
   return Response.json(
     {
       error_code: 'RATE_LIMITED',
-      message:
-        language === 'it'
-          ? `Troppe richieste. Riprova tra ${retryAfterSeconds} secondi.`
-          : `Too many requests. Please retry in ${retryAfterSeconds} seconds.`,
+      message,
     },
     {
       status: 429,

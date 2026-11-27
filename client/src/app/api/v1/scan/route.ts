@@ -15,6 +15,20 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
+type SupportedLang = 'en' | 'da' | 'it';
+
+function parseLanguage(raw: unknown): SupportedLang {
+  if (raw === 'it') return 'it';
+  if (raw === 'da') return 'da';
+  return 'en';
+}
+
+function localizedText(lang: SupportedLang, en: string, da: string, it: string): string {
+  if (lang === 'it') return it;
+  if (lang === 'da') return da;
+  return en;
+}
+
 function buildPrompt(targetLang: string, dietary: string[], targetItem?: string) {
   const dietaryText = dietary.length > 0
     ? `USER DIETARY FILTERS: ${dietary.join(', ')}. Flag any product violating these in "dietary_warning" in ${targetLang} (null if compliant).`
@@ -25,13 +39,14 @@ function buildPrompt(targetLang: string, dietary: string[], targetItem?: string)
     : '';
 
   return `Analyze this Danish supermarket shelf/product image for a shopper.
-SPEED RULE: Focus ONLY on the 1 to 4 largest, clearest products in the foreground. Ignore tiny background shelves.
+SPEED & CROWDED SHELF RULE: On dense or wide shelves, ignore tiny background items and focus ONLY on the 1 to 4 clearest foreground products with readable labels or price tags.
 LANGUAGE RULE: Write all translated names, summaries, warnings, and copilot_tip in ${targetLang}.
 ${dietaryText}
 ${targetText}
 
 Return ONLY valid JSON matching this schema:
 {
+  "image_quality": "clear",
   "copilot_tip": "1 short practical sentence in ${targetLang} telling which product is best value/fit and why (e.g. compare price per kg/L or dietary fit).",
   "recommended_index": 0,
   "items": [
@@ -56,10 +71,12 @@ Return ONLY valid JSON matching this schema:
   ]
 }
 Rules:
+- Set "image_quality" to "blurry" if text/prices are out of focus, "too_far" if the shelf is too far away/dense to read any single label, else "clear".
 - Max 4 items.
+- Set "price_dkk" to null (NEVER 0) if the shelf price tag is not visible or cannot be read reliably.
 - Calculate or read unit_price_dkk per kg or L whenever weight/volume or shelf kr/kg is visible so shopper can compare real value.
 - Set pant_dkk to 1, 1.5, or 3 ONLY for Danish returnable bottles/cans (Pant A/B/C), else 0.
-- If no food/grocery product or readable price tag is visible, return {"items":[]}.`;
+- If no food/grocery product is readable, return {"image_quality":"blurry" or "too_far","items":[]}.`;
 }
 
 interface RawProductItem {
@@ -105,10 +122,14 @@ function mapItemToProduct(item: RawProductItem, dietary: string[]): ProductCard 
     ? String(item.dietary_warning)
     : null;
 
+  const rawPrice = item.price_dkk ?? item.package_price_dkk;
+  const parsedPrice = rawPrice != null && rawPrice !== '' ? Number(rawPrice) : null;
+  const packagePriceDkk = parsedPrice != null && Number.isFinite(parsedPrice) && parsedPrice > 0 ? parsedPrice : null;
+
   return {
     label: item.translated_name || item.english_name || item.danish_name || item.label || 'Danish Product',
     danish_term: item.danish_name || item.danish_term || '',
-    package_price_dkk: Number(item.price_dkk ?? item.package_price_dkk ?? 0),
+    package_price_dkk: packagePriceDkk,
     unit_price_dkk: item.unit_price_dkk != null && Number(item.unit_price_dkk) > 0 ? Number(item.unit_price_dkk) : null,
     unit_measure: item.unit_measure || null,
     pant_fee_dkk: pant > 0 ? pant : null,
@@ -139,7 +160,7 @@ export async function POST(request: NextRequest) {
   let preferences: ScanPreferences = {};
   let base64 = '';
   let mimeType = 'image/jpeg';
-  let language: 'en' | 'it' = 'en';
+  let language: SupportedLang = 'en';
   let targetItem = '';
 
   try {
@@ -153,7 +174,7 @@ export async function POST(request: NextRequest) {
       }
       mimeType = typeof body.mimeType === 'string' ? body.mimeType : 'image/jpeg';
       preferences = body.preferences || {};
-      language = (body.language || preferences?.language) === 'it' ? 'it' : 'en';
+      language = parseLanguage(body.language || preferences?.language);
       targetItem = sanitizeUserText(body.targetItem, 60);
     } else if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData();
@@ -173,7 +194,7 @@ export async function POST(request: NextRequest) {
         mimeType = file.type || 'image/jpeg';
       }
       preferences = preferencesStr ? JSON.parse(preferencesStr) : {};
-      language = (langStr || preferences?.language) === 'it' ? 'it' : 'en';
+      language = parseLanguage(langStr || preferences?.language);
     } else {
       return NextResponse.json(
         { error_code: 'UNSUPPORTED_MEDIA_TYPE', message: 'Use application/json or multipart/form-data.' },
@@ -193,7 +214,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error_code: imgValidation.code,
-        message: language === 'it' ? imgValidation.messageIt : imgValidation.messageEn,
+        message: localizedText(language, imgValidation.messageEn, imgValidation.messageDa, imgValidation.messageIt),
       },
       { status: imgValidation.status }
     );
@@ -208,9 +229,12 @@ export async function POST(request: NextRequest) {
         {
           error_code: 'QUOTA_EXCEEDED',
           exceeded_period: quota.exceededPeriod,
-          message: language === 'it'
-            ? 'Limite giornaliero gratuito raggiunto. Riprova più tardi o usa lo Scaffale Demo nell\'Aiuto.'
-            : 'Free daily capacity reached. Please retry later or try the Demo Shelf inside Help.',
+          message: localizedText(
+            language,
+            'Free daily capacity reached. Please retry later or try the Demo Shelf inside Help.',
+            'Gratis daglig kapacitet nået. Prøv igen senere eller brug Demohylden under Hjælp.',
+            'Limite giornaliero gratuito raggiunto. Riprova più tardi o usa lo Scaffale Demo nell\'Aiuto.'
+          ),
         },
         {
           status: 429,
@@ -228,16 +252,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error_code: 'AUTH_ERROR',
-        message: language === 'it'
-          ? 'Chiave API Gemini mancante o non valida nelle variabili d\'ambiente.'
-          : 'Gemini API key is missing or invalid in environment variables.',
+        message: localizedText(
+          language,
+          'Gemini API key is missing or invalid in environment variables.',
+          'Gemini API-nøgle mangler eller er ugyldig i miljøvariablerne.',
+          'Chiave API Gemini mancante o non valida nelle variabili d\'ambiente.'
+        ),
       },
       { status: 401 }
     );
   }
 
   const dietary = sanitizeDietaryFilters(preferences?.dietary_lifestyle);
-  const targetLang = language === 'it' ? 'Italian' : 'English';
+  const targetLang = language === 'it' ? 'Italian' : language === 'da' ? 'Danish' : 'English';
   const prompt = buildPrompt(targetLang, dietary, targetItem || undefined);
 
   // Prioritize high-RPD Flash-Lite models (500 RPD, 15 RPM each) before 20-RPD Flash preview
@@ -333,12 +360,44 @@ export async function POST(request: NextRequest) {
           : (Array.isArray(parsed?.detected_products) ? parsed.detected_products : []);
 
         if (rawItems.length === 0) {
+          const quality = typeof parsed?.image_quality === 'string' ? parsed.image_quality.toLowerCase() : '';
+          if (quality === 'blurry') {
+            return NextResponse.json(
+              {
+                error_code: 'IMAGE_BLURRY',
+                message: localizedText(
+                  language,
+                  'The photo is too blurry. Hold steady and focus on the price tags.',
+                  'Billedet er sløret. Hold telefonen stille og fokuser på prisskiltene.',
+                  'La foto è troppo sfocata. Tieni fermo il telefono e metti a fuoco i cartellini.'
+                ),
+              },
+              { status: 422 }
+            );
+          }
+          if (quality === 'too_far') {
+            return NextResponse.json(
+              {
+                error_code: 'SHELF_TOO_DENSE',
+                message: localizedText(
+                  language,
+                  'Shelf too far or crowded. Move closer (30–50 cm) and frame 1–3 items.',
+                  'Hylden er for langt væk eller tætpakket. Gå tættere på og indram 1–3 varer.',
+                  'Scaffale troppo lontano o affollato. Avvicinati (30–50 cm) e inquadra 1–3 prodotti.'
+                ),
+              },
+              { status: 422 }
+            );
+          }
           return NextResponse.json(
             {
               error_code: 'NO_PRODUCTS_FOUND',
-              message: language === 'it'
-                ? 'Nessun prodotto o cartellino prezzo leggibile nell\'immagine.'
-                : 'No readable products or price tags found in the image.',
+              message: localizedText(
+                language,
+                'No readable products or price tags found in the image.',
+                'Ingen læselige varer eller prisskilte fundet på billedet.',
+                'Nessun prodotto o cartellino prezzo leggibile nell\'immagine.'
+              ),
             },
             { status: 422 }
           );
@@ -355,15 +414,15 @@ export async function POST(request: NextRequest) {
           recommendedIdx = Math.max(0, detectedProducts.findIndex(p => p.matches_constraints));
         }
 
+        const qualityFlag = typeof parsed?.image_quality === 'string' && parsed.image_quality.toLowerCase() === 'blurry';
+
         const finalResult: ScanResult = {
           items: rawItems.slice(0, 4),
           detected_products: detectedProducts,
           recommended_product_index: recommendedIdx,
           copilot_tip: parsed?.copilot_tip || null,
-          decision_reason: parsed?.copilot_tip || (language === 'it'
-            ? `Rilevati ${detectedProducts.length} prodotti in primo piano.`
-            : `Detected ${detectedProducts.length} prominent products in foreground.`),
-          is_blurry_or_obscured: false,
+          decision_reason: null,
+          is_blurry_or_obscured: qualityFlag,
           model_used: model,
           latency_ms: Date.now() - startTime,
         };
@@ -384,9 +443,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error_code: 'QUOTA_EXCEEDED',
-        message: language === 'it'
-          ? 'Limite richieste gratuite Gemini API raggiunto. Riprova tra 1 minuto.'
-          : 'Gemini free API quota reached for this minute. Please retry in 1 minute.',
+        message: localizedText(
+          language,
+          'Gemini free API quota reached for this minute. Please retry in 1 minute.',
+          'Gratis Gemini API-grænse for dette minut er nået. Prøv igen om 1 minut.',
+          'Limite richieste gratuite Gemini API raggiunto. Riprova tra 1 minuto.'
+        ),
       },
       { status: 429 }
     );
@@ -396,9 +458,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error_code: 'TIMEOUT_TOO_DENSE',
-        message: language === 'it'
-          ? 'L\'immagine richiede troppo tempo. Inquadra da più vicino 1–3 prodotti.'
-          : 'The scan took too long. Move closer and frame 1–3 products.',
+        message: localizedText(
+          language,
+          'The scan took too long. Move closer and frame 1–3 products.',
+          'Scanningen tog for lang tid. Gå tættere på og indram 1–3 varer.',
+          'L\'immagine richiede troppo tempo. Inquadra da più vicino 1–3 prodotti.'
+        ),
       },
       { status: 408 }
     );
@@ -408,9 +473,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error_code: 'AUTH_ERROR',
-        message: language === 'it'
-          ? 'Chiave API Gemini non valida o scaduta nelle variabili d\'ambiente.'
-          : 'Gemini API key is invalid or expired in environment variables.',
+        message: localizedText(
+          language,
+          'Gemini API key is invalid or expired in environment variables.',
+          'Gemini API-nøgle er ugyldig eller udløbet i miljøvariablerne.',
+          'Chiave API Gemini non valida o scaduta nelle variabili d\'ambiente.'
+        ),
       },
       { status: 401 }
     );
@@ -419,7 +487,12 @@ export async function POST(request: NextRequest) {
   return NextResponse.json(
     {
       error_code: 'SCAN_FAILED',
-      message: language === 'it' ? 'Errore durante l\'analisi dello scaffale. Riprova.' : 'Error during shelf scan. Please retry.',
+      message: localizedText(
+        language,
+        'Error during shelf scan. Please retry.',
+        'Fejl under hyldescanning. Prøv igen.',
+        'Errore durante l\'analisi dello scaffale. Riprova.'
+      ),
     },
     { status: 500 }
   );

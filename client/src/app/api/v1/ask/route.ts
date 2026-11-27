@@ -43,12 +43,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const language = body.language === 'it' ? 'it' : 'en';
+  const language = body.language === 'it' ? 'it' : body.language === 'da' ? 'da' : 'en';
   const question = sanitizeUserText(body.question, 240);
 
   if (!question) {
     return NextResponse.json(
-      { error: language === 'it' ? 'Domanda non valida o vuota.' : 'Question is required.' },
+      {
+        error: language === 'it'
+          ? 'Domanda non valida o vuota.'
+          : language === 'da'
+          ? 'Spørgsmål mangler eller er ugyldigt.'
+          : 'Question is required.',
+      },
       { status: 400 }
     );
   }
@@ -64,7 +70,13 @@ export async function POST(request: NextRequest) {
     );
     if (!check.valid) {
       return NextResponse.json(
-        { error: language === 'it' ? check.messageIt : check.messageEn },
+        {
+          error: language === 'it'
+            ? check.messageIt
+            : language === 'da'
+            ? check.messageDa
+            : check.messageEn,
+        },
         { status: check.status }
       );
     }
@@ -84,7 +96,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'API key missing' }, { status: 401 });
   }
 
-  const targetLang = language === 'it' ? 'Italian' : 'English';
+  const targetLang = language === 'it' ? 'Italian' : language === 'da' ? 'Danish' : 'English';
   const dietary = sanitizeDietaryFilters(body.dietary);
   const productsContext = Array.isArray(body.products) ? body.products.slice(0, 6) : [];
 
@@ -147,6 +159,8 @@ SHOPPER_QUESTION: "${question}"`;
     {
       error: language === 'it'
         ? 'Impossibile ottenere una risposta al momento. Riprova tra qualche secondo.'
+        : language === 'da'
+        ? 'Kunne ikke hente et svar lige nu. Prøv igen om et øjeblik.'
         : 'Could not get an answer right now. Please try again in a moment.',
     },
     { status: 503 }

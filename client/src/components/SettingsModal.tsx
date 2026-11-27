@@ -2,11 +2,11 @@
 
 import { X, Moon, Sun, Monitor, Languages, ShieldCheck, Coins } from "lucide-react";
 import React from "react";
-import { getTranslation } from "../lib/translations";
+import { getTranslation, type Language } from "../lib/translations";
 
 export interface UserPreferences {
   theme: "dark" | "light" | "system";
-  language: "en" | "it";
+  language: Language;
   dietary: {
     vegetarian: boolean;
     vegan: boolean;
@@ -50,7 +50,7 @@ export default function SettingsModal({
     }
   };
 
-  const handleLanguageChange = (language: "en" | "it") => {
+  const handleLanguageChange = (language: Language) => {
     const updated: UserPreferences = { ...preferences, language };
     onUpdatePreferences(updated);
     if (typeof window !== "undefined") {
@@ -170,16 +170,17 @@ export default function SettingsModal({
             <label className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-2.5 flex items-center gap-1.5">
               <Languages className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400" /> {t.language}
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {[
                 { id: "en", label: "English", sub: "Default" },
+                { id: "da", label: "Dansk", sub: "Danish" },
                 { id: "it", label: "Italiano", sub: "Italian" },
               ].map(({ id, label, sub }) => {
                 const isSelected = preferences.language === id;
                 return (
                   <button
                     key={id}
-                    onClick={() => handleLanguageChange(id as "en" | "it")}
+                    onClick={() => handleLanguageChange(id as Language)}
                     className={`flex flex-col items-start p-3 rounded-2xl border text-left transition-all ${
                       isSelected
                         ? "border-emerald-500 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 shadow-xs"
