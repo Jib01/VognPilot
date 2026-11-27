@@ -6,7 +6,9 @@
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:security": "node --test tests/security.test.mts",
+    "test:live": "node tests/live-security-smoke.mjs"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

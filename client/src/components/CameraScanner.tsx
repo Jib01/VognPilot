@@ -21,6 +21,7 @@ import {
   Clock,
   ListChecks,
   Check,
+  Copy,
 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ScanResult, ProductCard } from '../types/vision';
@@ -74,17 +75,19 @@ export default function CameraScanner() {
   const [targetItem, setTargetItem] = useState<string | null>(null);
   const [recentScans, setRecentScans] = useState<RecentScanEntry[]>([]);
 
-  // Scanning feedback
+  // Scanning feedback & toast
   const [loadingStep, setLoadingStep] = useState(0);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [isSlowScan, setIsSlowScan] = useState(false);
   const [errorModal, setErrorModal] = useState<ErrorModalState | null>(null);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
 
-  // Cart quick-add & inline price editing
+  // Cart quick-add, inline price editing, clipboard copy
   const [quickInput, setQuickInput] = useState('');
   const [editingPriceId, setEditingPriceId] = useState<number | null>(null);
   const [tempItemPrice, setTempItemPrice] = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
+  const [copiedCart, setCopiedCart] = useState(false);
 
   // Modals
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -133,6 +136,11 @@ export default function CameraScanner() {
   }, []);
 
   const t = getTranslation(preferences.language);
+
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(prev => (prev === msg ? null : prev)), 2000);
+  };
 
   // Apply theme dynamically to <html>
   useEffect(() => {
@@ -189,6 +197,20 @@ export default function CameraScanner() {
   if (preferences.dietary.organic) activeDietaryList.push('organic');
   if (preferences.dietary.lactoseFree) activeDietaryList.push('lactose_free');
   if (preferences.dietary.glutenFree) activeDietaryList.push('gluten_free');
+
+  const toggleQuickDietary = (key: keyof UserPreferences['dietary']) => {
+    const updated: UserPreferences = {
+      ...preferences,
+      dietary: {
+        ...preferences.dietary,
+        [key]: !preferences.dietary[key],
+      },
+    };
+    setPreferences(updated);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('vognpilot_dietary', JSON.stringify(updated.dietary));
+    }
+  };
 
   // Compress image to max 896px with 0.72 JPEG quality for sharp price-tag OCR & fast upload
   const compressImage = (blob: Blob): Promise<string> =>
@@ -322,7 +344,8 @@ export default function CameraScanner() {
         setErrorModal({ code: 'NO_PRODUCTS_FOUND', title: t.errorNoProductsTitle, message: t.errorNoProductsMsg });
         break;
       case 'QUOTA_EXCEEDED':
-        setErrorModal({ code: 'QUOTA_EXCEEDED', title: t.errorQuotaTitle, message: t.errorQuotaMsg });
+      case 'RATE_LIMITED':
+        setErrorModal({ code: 'QUOTA_EXCEEDED', title: t.errorQuotaTitle, message: serverMsg || t.errorQuotaMsg });
         break;
       case 'AUTH_ERROR':
         setErrorModal({ code: 'AUTH_ERROR', title: t.errorAuthTitle, message: serverMsg || t.errorAuthMsg });
@@ -344,11 +367,28 @@ export default function CameraScanner() {
     }
   };
 
+  const handleSampleScan = async (samplePath: string) => {
+    setImageUri(samplePath);
+    setActiveTab('scan');
+    setScanStep('scanning');
+    setErrorModal(null);
+
+    try {
+      const res = await fetch(samplePath);
+      if (!res.ok) throw new Error('Sample image unavailable');
+      const blob = await res.blob();
+      await scanImage(blob, samplePath);
+    } catch {
+      setScanStep('idle');
+      handleStructuredError('NETWORK_ERROR');
+    }
+  };
+
   const handleInstantDemoScan = () => {
     setActiveTab('scan');
     setScanStep('scanning');
     setErrorModal(null);
-    setImageUri('/icon-512.svg');
+    setImageUri('/samples/sample-dairy.jpg');
 
     setTimeout(() => {
       const isIt = preferences.language === 'it';
@@ -507,7 +547,6 @@ export default function CameraScanner() {
       });
     }
 
-    // If user was scanning specifically for a checklist item, remove it from 'todo'
     if (targetItem) {
       const todoMatch = allItems.find(
         i => i.status === 'todo' && i.name.toLowerCase() === targetItem.toLowerCase()
@@ -517,6 +556,8 @@ export default function CameraScanner() {
       }
       setTargetItem(null);
     }
+
+    showToast(t.addedToast);
   };
 
   const handleQuickAdd = async (e: React.FormEvent) => {
@@ -524,7 +565,6 @@ export default function CameraScanner() {
     const raw = quickInput.trim();
     if (!raw) return;
 
-    // Parse optional trailing price e.g. "Pane 18" or "Milk 14.50 kr"
     const priceMatch = raw.match(/^(.*?)\s+(\d+(?:[.,]\d{1,2})?)\s*(?:kr|dkk|€)?$/i);
     if (priceMatch && priceMatch[1].trim().length > 0) {
       const name = priceMatch[1].trim();
@@ -542,8 +582,8 @@ export default function CameraScanner() {
         sync_status: 'pending',
         created_at: Date.now(),
       });
+      showToast(t.addedToast);
     } else {
-      // No price -> add to "To Buy (Checklist)"
       await db.groceryList.add({
         uuid: makeUuid(),
         name: raw,
@@ -564,6 +604,7 @@ export default function CameraScanner() {
   const moveTodoToCart = async (item: GroceryItem) => {
     if (!item.id) return;
     await db.groceryList.update(item.id, { status: 'in_cart', is_checked: false, sync_status: 'pending' });
+    showToast(t.addedToast);
   };
 
   const launchScanForTodo = (itemName: string) => {
@@ -613,6 +654,31 @@ export default function CameraScanner() {
     setConfirmClear(false);
   };
 
+  const handleCopyCart = async () => {
+    const lines: string[] = [];
+    if (inCartItems.length > 0) {
+      lines.push(`🛒 ${t.appTitle} (${totalDKK.toFixed(2)} kr / €${convertDKKtoEUR(totalDKK)})`);
+      for (const item of inCartItems) {
+        const qty = item.quantity || 1;
+        const rowTotal = ((item.price_dkk || 0) + (item.pant_fee_dkk || 0)) * qty;
+        lines.push(`• ${qty}x ${item.name} — ${rowTotal.toFixed(2)} kr`);
+      }
+    }
+    if (todoItems.length > 0) {
+      lines.push(`\n📝 ${t.sectionTodo}:`);
+      for (const item of todoItems) {
+        lines.push(`- ${item.name}`);
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      setCopiedCart(true);
+      setTimeout(() => setCopiedCart(false), 2000);
+    } catch {
+      // Clipboard API unavailable
+    }
+  };
+
   const saveBudget = () => {
     const num = Math.max(10, parseFloat(tempBudget) || 200);
     setBudgetTarget(num);
@@ -622,13 +688,28 @@ export default function CameraScanner() {
 
   const budgetPercent = Math.min((totalDKK / budgetTarget) * 100, 100);
   const isOverBudget = totalDKK > budgetTarget;
+  const remainingBudget = Math.max(0, budgetTarget - totalDKK);
   const activeDietaryCount = activeDietaryList.length;
 
   const formatCartPrice = (dkk: number) =>
     preferences.currency === 'EUR' ? `€${(dkk / 7.46).toFixed(2)}` : `${dkk.toFixed(2)} kr`;
 
+  const sampleShelves = [
+    { path: '/samples/sample-dairy.jpg', label: t.sampleDairyLabel, emoji: '🥛' },
+    { path: '/samples/sample-bananas.jpg', label: t.sampleBananasLabel, emoji: '🍌' },
+    { path: '/samples/sample-juice.jpg', label: t.sampleJuiceLabel, emoji: '🍊' },
+    { path: '/samples/sample-butter.jpg', label: t.sampleButterLabel, emoji: '🧈' },
+  ];
+
+  const quickDietChips: Array<{ key: keyof UserPreferences['dietary']; label: string; emoji: string }> = [
+    { key: 'organic', label: t.organic, emoji: '🌿' },
+    { key: 'lactoseFree', label: t.lactoseFree, emoji: '🥛' },
+    { key: 'vegan', label: t.vegan, emoji: '🌱' },
+    { key: 'glutenFree', label: t.glutenFree, emoji: '🌾' },
+  ];
+
   return (
-    <div className="relative w-full max-w-md mx-auto h-[100dvh] bg-zinc-50 text-zinc-900 dark:bg-[#0b0b0e] dark:text-zinc-100 overflow-hidden flex flex-col font-sans select-none transition-colors">
+    <div className="relative w-full max-w-md mx-auto h-[100dvh] sm:h-[min(860px,calc(100dvh-2rem))] sm:rounded-[2rem] sm:border sm:border-zinc-200/90 dark:sm:border-zinc-800/90 sm:shadow-2xl bg-zinc-50 text-zinc-900 dark:bg-[#0b0b0e] dark:text-zinc-100 overflow-hidden flex flex-col font-sans select-none transition-colors">
 
       {/* Hidden file inputs */}
       <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleCapture} />
@@ -636,11 +717,14 @@ export default function CameraScanner() {
 
       {/* ─── HEADER ─── */}
       <header className="h-14 w-full px-4 z-50 flex justify-between items-center bg-white/95 dark:bg-[#0b0b0e]/95 backdrop-blur-md border-b border-zinc-200 dark:border-white/10 shrink-0">
-        <div className="flex items-center gap-2 cursor-pointer whitespace-nowrap flex-shrink-0" onClick={resetToScanHome}>
-          <div className="w-8 h-8 rounded-xl bg-emerald-600 flex items-center justify-center shadow-xs">
-            <span className="text-white font-black text-base">V</span>
+        <div className="flex items-center gap-2.5 cursor-pointer whitespace-nowrap flex-shrink-0" onClick={resetToScanHome}>
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center shadow-sm">
+            <span className="text-white font-black text-base leading-none">V</span>
           </div>
-          <h1 className="font-extrabold text-lg tracking-tight text-zinc-900 dark:text-zinc-100">VognPilot</h1>
+          <div>
+            <h1 className="font-extrabold text-base tracking-tight text-zinc-900 dark:text-zinc-100 leading-none">VognPilot</h1>
+            <p className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 leading-none mt-0.5">{t.appTagline}</p>
+          </div>
         </div>
 
         <div className="flex items-center gap-1.5 whitespace-nowrap flex-shrink-0">
@@ -677,14 +761,28 @@ export default function CameraScanner() {
         </div>
       </header>
 
-      {/* ─── COMPACT LIVE BUDGET STRIP (Hidden only while scanning/viewing results) ─── */}
+      {/* ─── COMPACT LIVE BUDGET STRIP ─── */}
       {!(activeTab === 'scan' && scanStep !== 'idle') ? (
         <div className="px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/60 shrink-0">
           <div className="flex justify-between items-center mb-1.5">
-            <div className="flex items-center gap-1.5 text-[11px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-              <Target className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              {t.budget}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 text-[11px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                <Target className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                {t.budget}
+              </div>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                isOverBudget
+                  ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/70 dark:text-rose-300'
+                  : budgetPercent > 80
+                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300'
+                  : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400'
+              }`}>
+                {isOverBudget
+                  ? `+${(totalDKK - budgetTarget).toFixed(0)} kr ${t.overBudget}`
+                  : `${remainingBudget.toFixed(0)} kr ${t.remaining}`}
+              </span>
             </div>
+
             <div className="flex items-center gap-2">
               <span className={`text-xs font-extrabold ${isOverBudget ? 'text-rose-500 dark:text-rose-400' : 'text-zinc-900 dark:text-zinc-100'}`}>
                 {preferences.currency === 'EUR'
@@ -699,7 +797,7 @@ export default function CameraScanner() {
               </button>
             </div>
           </div>
-          <div className="h-1.5 w-full bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
+          <div className="h-2 w-full bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
             <div
               className={`h-full transition-all duration-500 rounded-full ${isOverBudget ? 'bg-rose-500' : budgetPercent > 80 ? 'bg-amber-500' : 'bg-emerald-500'}`}
               style={{ width: `${budgetPercent}%` }}
@@ -734,7 +832,7 @@ export default function CameraScanner() {
               ) : null}
 
               {/* Hero Scan Card */}
-              <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 shadow-xs space-y-4">
+              <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-gradient-to-br from-white via-white to-emerald-50/70 dark:from-zinc-900 dark:via-zinc-900 dark:to-emerald-950/30 p-5 shadow-sm space-y-4">
                 <div>
                   <h2 className="text-lg font-extrabold text-zinc-900 dark:text-zinc-100 tracking-tight">
                     {t.scanHeroTitle}
@@ -747,14 +845,14 @@ export default function CameraScanner() {
                 <div className="flex gap-2.5">
                   <button
                     onClick={() => cameraInputRef.current?.click()}
-                    className="flex-1 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 font-bold text-sm shadow-md shadow-emerald-950/20 transition-all active:scale-[0.98]"
+                    className="flex-1 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 active:scale-[0.98] text-white py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 font-bold text-sm shadow-lg shadow-emerald-600/20 transition-all"
                   >
                     <Camera className="w-5 h-5" />
                     {t.takePhoto}
                   </button>
                   <button
                     onClick={() => galleryInputRef.current?.click()}
-                    className="px-4 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 rounded-2xl flex items-center justify-center gap-1.5 font-bold text-xs transition-all active:scale-[0.98]"
+                    className="px-4 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 rounded-2xl flex items-center justify-center gap-1.5 font-bold text-xs transition-all active:scale-[0.98] shadow-xs"
                     aria-label={t.gallery}
                   >
                     <Upload className="w-4 h-4" />
@@ -762,19 +860,31 @@ export default function CameraScanner() {
                   </button>
                 </div>
 
-                {/* Active dietary profile badges */}
-                {activeDietaryCount > 0 ? (
-                  <button
-                    onClick={() => setIsSettingsOpen(true)}
-                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-900/50 text-xs text-emerald-800 dark:text-emerald-300 font-semibold active:scale-[0.99] transition-all"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      {activeDietaryCount} {activeDietaryCount > 1 ? t.activeFiltersPlural : t.activeFilters}
-                    </span>
-                    <span className="text-[10px] underline opacity-80">{t.editBudget}</span>
-                  </button>
-                ) : null}
+                {/* 1-Tap Quick Dietary Filter Bar */}
+                <div className="pt-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 mb-1.5">
+                    {t.quickDietLabel}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {quickDietChips.map(({ key, label, emoji }) => {
+                      const active = preferences.dietary[key];
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => toggleQuickDietary(key)}
+                          className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all active:scale-95 flex items-center gap-1 ${
+                            active
+                              ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                              : 'bg-zinc-100/80 dark:bg-zinc-800/80 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-emerald-400'
+                          }`}
+                        >
+                          <span>{emoji}</span>
+                          <span>{label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
 
               {/* Quick Checklist Targets (from To Buy list) */}
@@ -798,6 +908,43 @@ export default function CameraScanner() {
                   </div>
                 </div>
               ) : null}
+
+              {/* Real Danish Shelf Samples Carousel (Portfolio & Quick Test UX) */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    {t.sampleShelvesTitle}
+                  </span>
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50">
+                    {t.sampleShelvesBadge}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  {sampleShelves.map((sample) => (
+                    <button
+                      key={sample.path}
+                      onClick={() => handleSampleScan(sample.path)}
+                      className="group relative rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-left shadow-xs hover:border-emerald-500/80 transition-all active:scale-[0.98]"
+                    >
+                      <div className="relative h-20 w-full overflow-hidden bg-zinc-200 dark:bg-zinc-800">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={sample.path}
+                          alt={sample.label}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent" />
+                        <span className="absolute bottom-1.5 left-2 right-2 text-[11px] font-extrabold text-white drop-shadow-sm flex items-center gap-1 truncate">
+                          <span>{sample.emoji}</span>
+                          <span className="truncate">{sample.label}</span>
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               {/* Recent Scans Strip */}
               {recentScans.length > 0 ? (
@@ -837,7 +984,7 @@ export default function CameraScanner() {
                   </div>
                 </div>
               ) : (
-                <div className="pt-2 flex justify-center">
+                <div className="pt-1 flex justify-center">
                   <button
                     onClick={() => setIsTutorialOpen(true)}
                     className="px-4 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border border-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-zinc-100 dark:border-zinc-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-xs"
@@ -958,16 +1105,25 @@ export default function CameraScanner() {
                     <ShoppingCart className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                     {t.sectionInCart} ({totalInCartCount})
                   </span>
-                  <button
-                    onClick={handleClearCart}
-                    className={`text-[11px] font-bold px-2 py-0.5 rounded-lg transition-colors ${
-                      confirmClear
-                        ? 'bg-rose-600 text-white'
-                        : 'text-zinc-400 hover:text-rose-500 dark:hover:text-rose-400'
-                    }`}
-                  >
-                    {confirmClear ? t.confirmClearCart : t.clearCart}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleCopyCart}
+                      className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 flex items-center gap-1 transition-colors"
+                    >
+                      <Copy className="w-3 h-3" />
+                      <span>{copiedCart ? t.copiedCart : t.copyCart}</span>
+                    </button>
+                    <button
+                      onClick={handleClearCart}
+                      className={`text-[11px] font-bold px-2 py-0.5 rounded-lg transition-colors ${
+                        confirmClear
+                          ? 'bg-rose-600 text-white'
+                          : 'text-zinc-400 hover:text-rose-500 dark:hover:text-rose-400'
+                      }`}
+                    >
+                      {confirmClear ? t.confirmClearCart : t.clearCart}
+                    </button>
+                  </div>
                 </div>
 
                 {inCartItems.map(item => {
@@ -1133,6 +1289,13 @@ export default function CameraScanner() {
           </div>
         </div>
       )}
+
+      {/* ─── FLOATING TOAST FEEDBACK ─── */}
+      {toastMsg ? (
+        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-[150] px-4 py-2 rounded-full bg-zinc-900 text-white dark:bg-emerald-600 text-xs font-extrabold shadow-lg animate-in fade-in slide-in-from-bottom-2 duration-200 pointer-events-none whitespace-nowrap">
+          {toastMsg}
+        </div>
+      ) : null}
 
       {/* ─── PERSISTENT BOTTOM 2-TAB NAVIGATION BAR ─── */}
       {!(activeTab === 'scan' && scanStep !== 'idle') ? (

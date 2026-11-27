@@ -51,6 +51,7 @@ pgdata/
 *.png
 *.webp
 !client/public/**/*.png
+!client/public/samples/*.jpg
 !client/public/**/*.svg
 !client/public/**/*.ico
 !client/src/lib/

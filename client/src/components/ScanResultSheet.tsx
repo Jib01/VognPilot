@@ -178,6 +178,22 @@ export function ScanResultSheet({
       {/* Product cards + Copilot Ask AI */}
       {hasProducts ? (
         <div className="flex-1 overflow-y-auto hide-scrollbar px-3 py-3 space-y-3 pb-24">
+          {Boolean(scan.copilot_tip || scan.decision_reason) ? (
+            <div className="rounded-2xl bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent border border-emerald-500/30 dark:border-emerald-500/25 px-3.5 py-2.5 flex items-start gap-2.5">
+              <div className="w-6 h-6 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                <Sparkles className="w-3.5 h-3.5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                  {t.whyRecommended}
+                </p>
+                <p className="text-xs font-medium text-zinc-800 dark:text-zinc-200 leading-snug mt-0.5">
+                  {scan.copilot_tip || scan.decision_reason}
+                </p>
+              </div>
+            </div>
+          ) : null}
+
           {scan.detected_products.map((prod, idx) => {
             const price = prod.package_price_dkk ?? prod.unit_price_dkk;
             const priceDisplay = formatPrice(price);
